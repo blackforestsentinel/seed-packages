@@ -1,0 +1,36 @@
+{
+  "name": "@blackforestsentinel/seed-web-core",
+  "version": "0.0.0-dev",
+  "description": "Grundausstattung für Frontends in Sentinel-Seed-Projekten: Laufzeitkonfiguration und HTTP-Client.",
+  "license": "MIT",
+  "author": "Black Forest Sentinel",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/blackforestsentinel/seed-packages.git",
+    "directory": "web/packages/seed-web-core"
+  },
+  "homepage": "https://github.com/blackforestsentinel/seed-packages/tree/main/web/packages/seed-web-core",
+  "keywords": [
+    "sentinel-seed",
+    "azure-static-web-apps"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "test": "vitest run"
+  }
+}

@@ -1,0 +1,82 @@
+# Veröffentlicht alle Pakete in der Version des Git-Tags (v1.2.3 → 1.2.3).
+# Nur dieser Workflow veröffentlicht, nie ein lokaler Rechner.
+#
+# Authentifizierung ohne langlebige Schlüssel:
+# - nuget.org: Trusted Publishing, Richtlinie für dieses Repo und release.yml auf nuget.org
+#   anlegen, Variable NUGET_USER = nuget.org-Benutzername.
+# - npm: Trusted Publishing für jedes Paket auf npmjs.com. Bis ein Paket existiert, ist
+#   Trusted Publishing dort nicht einstellbar; für die Erstveröffentlichung das Secret
+#   NPM_TOKEN setzen und danach wieder löschen.
+name: Release
+
+on:
+  push:
+    tags: ['v*.*.*']
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  version:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - id: version
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Tag $GITHUB_REF_NAME ist keine SemVer-Version."
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  nuget:
+    needs: version
+    runs-on: ubuntu-24.04
+    environment: release
+    defaults:
+      run:
+        working-directory: dotnet
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: dotnet/global.json
+      - run: dotnet test --solution Bfs.Seed.slnx --configuration Release
+      - run: dotnet pack --configuration Release --output ../artifacts/nuget -p:Version=${{ needs.version.outputs.version }}
+      - uses: NuGet/login@v1
+        id: login
+        with:
+          user: ${{ vars.NUGET_USER }}
+      - run: >
+          dotnet nuget push "../artifacts/nuget/*.nupkg"
+          --api-key "${{ steps.login.outputs.NUGET_API_KEY }}"
+          --source https://api.nuget.org/v3/index.json
+          --skip-duplicate
+
+  npm:
+    needs: version
+    runs-on: ubuntu-24.04
+    environment: release
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - run: npm ci
+      - run: npm version "${{ needs.version.outputs.version }}" --workspaces --no-git-tag-version
+      - run: npm run build
+      - run: npm test
+      - run: npm publish --workspaces --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

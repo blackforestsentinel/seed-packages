@@ -1,20 +1,13 @@
 using System.Security.Cryptography;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.Extensions.Options;
-using Microsoft.IdentityModel.JsonWebTokens;
-using Microsoft.IdentityModel.Protocols;
-using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Microsoft.IdentityModel.Tokens;
 
 namespace Bfs.Seed.Auth.Tests;
 
 public class SeedTokenValidatorTests
 {
-    private const string TenantId = "11111111-1111-1111-1111-111111111111";
-    private const string ClientId = "22222222-2222-2222-2222-222222222222";
-
-    private readonly RsaSecurityKey signingKey = new(RSA.Create(2048)) { KeyId = "test-key" };
-    private readonly SeedAuthOptions options = new() { TenantId = TenantId, ClientId = ClientId };
+    private const string TenantId = TestTokens.TenantId;
+    private const string ClientId = TestTokens.ClientId;
 
     [Fact]
     public async Task ValidToken_ReturnsPrincipalWithName()
@@ -78,6 +71,80 @@ public class SeedTokenValidatorTests
     }
 
     [Fact]
+    public async Task AcceptedScopes_ReplaceRequiredScope()
+    {
+        var validator = CreateValidator();
+
+        var mcp = await validator.ValidateAsync(CreateToken(scope: "mcp_access"), ["mcp_access", "other"], TestContext.Current.CancellationToken);
+        var user = await validator.ValidateAsync(CreateToken(), ["mcp_access"], TestContext.Current.CancellationToken);
+
+        Assert.True(mcp.IsValid);
+        Assert.Equal(SeedTokenValidationResult.MissingScope, user.Error);
+        Assert.True(user.IsInsufficient);
+    }
+
+    [Fact]
+    public async Task Roles_ResolveToCapabilityClaims()
+    {
+        var result = await CreateValidator(Map).ValidateAsync(CreateToken(roles: ["Reader", "Admin"]), TestContext.Current.CancellationToken);
+
+        Assert.True(result.IsValid);
+        Assert.Equal(["invoices.read", "invoices.write"], result.Principal!.GetCapabilities().Order());
+        Assert.Equal(["Admin", "Reader"], result.Principal!.GetRoles().Order());
+        Assert.True(result.Principal!.IsInRole("Admin"));
+        Assert.False(result.Principal!.IsApplication());
+    }
+
+    [Fact]
+    public async Task DelegatedToken_GetsNoCapabilitiesFromApplicationOnlyRole()
+    {
+        var result = await CreateValidator(Map).ValidateAsync(CreateToken(roles: ["Sync"]), TestContext.Current.CancellationToken);
+
+        Assert.True(result.IsValid);
+        Assert.Empty(result.Principal!.GetCapabilities());
+    }
+
+    [Fact]
+    public async Task AppOnlyToken_WithApplicationRole_IsAccepted()
+    {
+        var result = await CreateValidator(Map).ValidateAsync(CreateToken(scope: null, roles: ["Sync", "Reader"]), TestContext.Current.CancellationToken);
+
+        Assert.True(result.IsValid);
+        Assert.True(result.Principal!.IsApplication());
+        Assert.Equal(["invoices.sync"], result.Principal!.GetCapabilities());
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("Reader")]
+    [InlineData("Unbekannt")]
+    public async Task AppOnlyToken_WithoutApplicationRole_IsRejected(string roles)
+    {
+        var token = CreateToken(scope: null, roles: roles.Split(',', StringSplitOptions.RemoveEmptyEntries));
+
+        var result = await CreateValidator(Map).ValidateAsync(token, TestContext.Current.CancellationToken);
+
+        Assert.Equal(SeedTokenValidationResult.MissingAppRole, result.Error);
+    }
+
+    [Fact]
+    public async Task AppOnlyToken_WithoutMap_IsRejected()
+    {
+        var result = await CreateValidator().ValidateAsync(CreateToken(scope: null, roles: ["Sync"]), TestContext.Current.CancellationToken);
+
+        Assert.False(result.IsValid);
+    }
+
+    [Fact]
+    public async Task IdtypApp_IsTreatedAsAppOnly()
+    {
+        var result = await CreateValidator(Map).ValidateAsync(CreateToken(scope: null, roles: ["Admin"], idtyp: "app"), TestContext.Current.CancellationToken);
+
+        Assert.True(result.Principal!.IsApplication());
+        Assert.Equal(["invoices.read", "invoices.write"], result.Principal!.GetCapabilities().Order());
+    }
+
+    [Fact]
     public void AllowAnonymous_IsDetectedOnMethodAndClass()
     {
         Assert.True(SeedAuthMiddleware.AllowsAnonymous($"{typeof(SampleFunctions).FullName}.{nameof(SampleFunctions.Health)}"));
@@ -85,32 +152,21 @@ public class SeedTokenValidatorTests
         Assert.True(SeedAuthMiddleware.AllowsAnonymous($"{typeof(PublicFunctions).FullName}.{nameof(PublicFunctions.Info)}"));
     }
 
-    private SeedTokenValidator CreateValidator()
-    {
-        var configuration = new OpenIdConnectConfiguration();
-        configuration.SigningKeys.Add(signingKey);
-        return new SeedTokenValidator(Options.Create(options), new StaticConfigurationManager<OpenIdConnectConfiguration>(configuration));
-    }
+    private static readonly SeedCapabilityMap Map = SeedCapabilityMap.Parse(SeedCapabilityMapTests.ProjectYaml);
+
+    private readonly TestTokens tokens = new();
+
+    private SeedTokenValidator CreateValidator(SeedCapabilityMap? map = null) => tokens.CreateValidator(map);
 
     private string CreateToken(
         string? audience = null,
         string? issuer = null,
-        string scope = "access_as_user",
+        string? scope = "access_as_user",
         DateTime? expires = null,
-        SecurityKey? key = null)
-    {
-        var expiry = expires ?? DateTime.UtcNow.AddMinutes(30);
-        return new JsonWebTokenHandler().CreateToken(new SecurityTokenDescriptor
-        {
-            Issuer = issuer ?? $"https://login.microsoftonline.com/{TenantId}/v2.0",
-            Audience = audience ?? ClientId,
-            NotBefore = expiry.AddMinutes(-60),
-            IssuedAt = expiry.AddMinutes(-60),
-            Expires = expiry,
-            Claims = new Dictionary<string, object> { ["scp"] = scope, ["name"] = "Erika Muster", ["oid"] = "55555555-5555-5555-5555-555555555555" },
-            SigningCredentials = new SigningCredentials(key ?? signingKey, SecurityAlgorithms.RsaSha256),
-        });
-    }
+        SecurityKey? key = null,
+        string[]? roles = null,
+        string? idtyp = null) =>
+        tokens.CreateToken(audience, issuer, scope, expires, key, roles, idtyp);
 
     public sealed class SampleFunctions
     {

@@ -19,7 +19,17 @@ jobs:
       - uses: actions/setup-dotnet@v6
         with:
           global-json-file: dotnet/global.json
+      # Azurite für die Integrationstests von Bfs.Seed.Storage (ETag, Base64 der Queue).
+      # Als Schritt statt als Service, weil der Service keine Startparameter kennt:
+      # --skipApiVersionCheck, damit neuere Azure-SDKs nicht an der Emulator-Version scheitern.
+      - name: Azurite
+        run: >
+          docker run -d --name azurite -p 10000:10000 -p 10001:10001 -p 10002:10002
+          mcr.microsoft.com/azure-storage/azurite:3.37.0
+          azurite --blobHost 0.0.0.0 --queueHost 0.0.0.0 --tableHost 0.0.0.0 --inMemoryPersistence --skipApiVersionCheck
       - run: dotnet test --solution Bfs.Seed.slnx --configuration Release
+        env:
+          SEED_REQUIRE_AZURITE: 'true'
       - run: dotnet pack --configuration Release --output ../artifacts/nuget
 
   web:

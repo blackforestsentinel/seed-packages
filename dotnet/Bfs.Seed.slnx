@@ -3,10 +3,12 @@
     <Project Path="src/Bfs.Seed.Auth/Bfs.Seed.Auth.csproj" />
     <Project Path="src/Bfs.Seed.Functions.Core/Bfs.Seed.Functions.Core.csproj" />
     <Project Path="src/Bfs.Seed.Mcp/Bfs.Seed.Mcp.csproj" />
+    <Project Path="src/Bfs.Seed.Storage/Bfs.Seed.Storage.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Bfs.Seed.Auth.Tests/Bfs.Seed.Auth.Tests.csproj" />
     <Project Path="tests/Bfs.Seed.Functions.Core.Tests/Bfs.Seed.Functions.Core.Tests.csproj" />
     <Project Path="tests/Bfs.Seed.Mcp.Tests/Bfs.Seed.Mcp.Tests.csproj" />
+    <Project Path="tests/Bfs.Seed.Storage.Tests/Bfs.Seed.Storage.Tests.csproj" />
   </Folder>
 </Solution>

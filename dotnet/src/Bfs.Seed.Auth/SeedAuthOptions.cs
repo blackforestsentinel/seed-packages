@@ -24,6 +24,13 @@ public sealed class SeedAuthOptions
     /// <summary>Delegierte Berechtigung, die im <c>scp</c>-Claim stehen muss.</summary>
     public string RequiredScope { get; set; } = "access_as_user";
 
+    /// <summary>
+    /// Pfad der Metadaten nach RFC 9728 (Protected Resource Metadata), z. B. für MCP-Clients.
+    /// Ist er gesetzt, nennt jede 401-Antwort die volle URL im Header <c>WWW-Authenticate</c>
+    /// als <c>resource_metadata</c>.
+    /// </summary>
+    public string? ResourceMetadataPath { get; set; }
+
     internal string Authority => $"{Instance.TrimEnd('/')}/{TenantId}/v2.0";
 
     internal IEnumerable<string> ValidAudiences =>

@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Middleware;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Bfs.Seed.Auth;
 
@@ -12,7 +13,7 @@ namespace Bfs.Seed.Auth;
 /// Lässt HTTP-Aufrufe nur mit gültigem Bearer-Token durch. Functions mit
 /// <see cref="AllowAnonymousAttribute"/> an Methode oder Klasse sind ausgenommen.
 /// </summary>
-internal sealed class SeedAuthMiddleware(SeedTokenValidator validator, ILogger<SeedAuthMiddleware> logger)
+internal sealed class SeedAuthMiddleware(SeedTokenValidator validator, IOptions<SeedAuthOptions> options, ILogger<SeedAuthMiddleware> logger)
     : IFunctionsWorkerMiddleware
 {
     private static readonly ConcurrentDictionary<string, bool> AnonymousFunctions = new();
@@ -66,10 +67,18 @@ internal sealed class SeedAuthMiddleware(SeedTokenValidator validator, ILogger<S
             || type?.GetCustomAttributes(inherit: true).OfType<IAllowAnonymous>().Any() == true;
     }
 
-    private static Task RejectAsync(HttpContext http, string error)
+    private Task RejectAsync(HttpContext http, string error)
     {
         http.Response.StatusCode = StatusCodes.Status401Unauthorized;
-        http.Response.Headers.WWWAuthenticate = $"Bearer error=\"{error}\"";
+        var challenge = $"Bearer error=\"{error}\"";
+        if (!string.IsNullOrWhiteSpace(options.Value.ResourceMetadataPath))
+        {
+            // Hinter dem Functions-Host kommt die Anfrage intern per HTTP an; nach außen gilt HTTPS.
+            var request = http.Request;
+            var scheme = request.Host.Host is "localhost" or "127.0.0.1" ? request.Scheme : "https";
+            challenge += $", resource_metadata=\"{scheme}://{request.Host}{options.Value.ResourceMetadataPath}\"";
+        }
+        http.Response.Headers.WWWAuthenticate = challenge;
         return Task.CompletedTask;
     }
 }

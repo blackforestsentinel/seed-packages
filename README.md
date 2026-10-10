@@ -8,8 +8,9 @@ Code-Bausteine für Projekte aus dem [Sentinel-Seed-Template](https://github.com
 | [`@blackforestsentinel/seed-web-core`](web/packages/seed-web-core) | npm | `loadRuntimeConfig()`, `createHttpClient()` |
 | [`Bfs.Seed.Auth`](dotnet/src/Bfs.Seed.Auth) | nuget.org | `UseSeedAuth()`: Token-Prüfung gegen Entra ID, `[AllowAnonymous]` für Ausnahmen |
 | [`@blackforestsentinel/seed-web-auth`](web/packages/seed-web-auth) | npm | `createSeedAuth()`: Login per MSAL, Access-Tokens für die API |
+| [`Bfs.Seed.Storage`](dotnet/src/Bfs.Seed.Storage) | nuget.org | `AddSeedStorage()`: Clients für Table, Blob und Queue (Managed Identity, lokal Azurite), Table-Repository mit ETag, Partition je `oid`/`tid`, Queue-Nachrichten passend zum Trigger |
 
-Geplant: `Bfs.Seed.Storage`, `Bfs.Seed.OpenApi`.
+Geplant: `Bfs.Seed.OpenApi`.
 
 ## Entwickeln
 
@@ -17,6 +18,8 @@ Geplant: `Bfs.Seed.Storage`, `Bfs.Seed.OpenApi`.
 cd dotnet && dotnet test --solution Bfs.Seed.slnx
 cd web && npm install && npm run build && npm test
 ```
+
+Die Integrationstests von `Bfs.Seed.Storage` laufen gegen Azurite (`npm install -g azurite`, dann `azurite --inMemoryPersistence --skipApiVersionCheck`). Ohne Azurite werden sie übersprungen, in der CI (`SEED_REQUIRE_AZURITE=true`) schlagen sie fehl.
 
 ## Veröffentlichen
 

@@ -87,17 +87,25 @@ jobs:
           NPM_STAGE_TOKEN: ${{ secrets.NPM_STAGE_TOKEN }}
         run: |
           set -euo pipefail
+          failed=()
           for manifest in packages/*/package.json; do
             name="$(node -p "require('./$manifest').name")"
-            if npm view "$name" name >/dev/null 2>&1; then
+            version="$(node -p "require('./$manifest').version")"
+            # Wiederholbar: bereits veröffentlichte Versionen überspringen.
+            if npm view "$name@$version" version >/dev/null 2>&1; then
+              echo "$name@$version ist schon veröffentlicht."
+            elif npm view "$name" name >/dev/null 2>&1; then
               echo "$name: npm publish"
-              npm publish -w "$name" --access public --provenance
+              npm publish -w "$name" --access public --provenance || failed+=("$name")
+            elif [ -z "$NPM_STAGE_TOKEN" ]; then
+              echo "::error::$name ist neu auf npm. Dafür braucht der Workflow das Secret NPM_STAGE_TOKEN (Granular Token, stage only)."
+              failed+=("$name")
             else
-              if [ -z "$NPM_STAGE_TOKEN" ]; then
-                echo "::error::$name ist neu auf npm. Dafür braucht der Workflow das Secret NPM_STAGE_TOKEN (Granular Token, stage only)."
-                exit 1
-              fi
               echo "::notice::$name ist neu und wird per npm stage publish bereitgestellt. Freigabe: npm stage list, dann npm stage approve <id>."
-              NODE_AUTH_TOKEN="$NPM_STAGE_TOKEN" npm stage publish -w "$name" --access public --provenance
+              NODE_AUTH_TOKEN="$NPM_STAGE_TOKEN" npm stage publish -w "$name" --access public --provenance || failed+=("$name")
             fi
           done
+          if [ "${#failed[@]}" -gt 0 ]; then
+            echo "::error::Nicht veröffentlicht: ${failed[*]}. Bei E404: Trusted Publisher des Pakets auf npmjs.com prüfen (Repo seed-packages, Workflow release.yml, Environment release, Allow npm publish)."
+            exit 1
+          fi

@@ -3,10 +3,9 @@
 #
 # Authentifizierung ohne langlebige Schlüssel:
 # - nuget.org: Trusted Publishing, Richtlinie für dieses Repo und release.yml auf nuget.org
-#   anlegen, Variable NUGET_USER = nuget.org-Benutzername.
-# - npm: Trusted Publishing für jedes Paket auf npmjs.com. Bis ein Paket existiert, ist
-#   Trusted Publishing dort nicht einstellbar; für die Erstveröffentlichung das Secret
-#   NPM_TOKEN setzen und danach wieder löschen.
+#   anlegen, Variable NUGET_USER (Environment release) = nuget.org-Benutzername.
+# - npm: Trusted Publishing je Paket auf npmjs.com mit "Allow npm publish".
+#   Die erste Version eines neuen Pakets läuft über npm stage publish (siehe README).
 name: Release
 
 on:
@@ -78,5 +77,3 @@ jobs:
       - run: npm run build
       - run: npm test
       - run: npm publish --workspaces --access public --provenance
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

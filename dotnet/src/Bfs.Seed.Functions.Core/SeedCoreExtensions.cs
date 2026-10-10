@@ -13,8 +13,8 @@ public static class SeedCoreExtensions
         "Microsoft.Extensions.Logging.ApplicationInsights.ApplicationInsightsLoggerProvider";
 
     /// <summary>
-    /// Registriert Application Insights für den Worker und bindet <see cref="SeedOptions"/>
-    /// an den Abschnitt <c>Seed</c>.
+    /// Registriert Application Insights für den Worker, bindet <see cref="SeedOptions"/>
+    /// an den Abschnitt <c>Seed</c> und registriert <see cref="SeedSecrets"/>.
     /// </summary>
     public static FunctionsApplicationBuilder AddSeedCore(this FunctionsApplicationBuilder builder)
     {
@@ -29,6 +29,9 @@ public static class SeedCoreExtensions
         builder.Services
             .AddOptions<SeedOptions>()
             .Bind(builder.Configuration.GetSection(SeedOptions.SectionName));
+
+        // SeedSecrets und die Prüfung beim Start auf Platzhalter und nicht aufgelöste Referenzen.
+        builder.Services.AddSeedSecrets();
 
         return builder;
     }

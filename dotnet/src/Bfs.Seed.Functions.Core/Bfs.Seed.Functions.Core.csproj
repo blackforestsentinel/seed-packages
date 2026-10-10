@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <Description>Grundausstattung für Azure Functions (dotnet-isolated) in Sentinel-Seed-Projekten: Application Insights, Seed-Optionen, Health-Report.</Description>
+    <Description>Grundausstattung für Azure Functions (dotnet-isolated) in Sentinel-Seed-Projekten: Application Insights, Seed-Optionen, Health-Report, Secrets aus dem Key Vault.</Description>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
 

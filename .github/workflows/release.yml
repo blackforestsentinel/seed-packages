@@ -5,7 +5,8 @@
 # - nuget.org: Trusted Publishing, Richtlinie für dieses Repo und release.yml auf nuget.org
 #   anlegen, Variable NUGET_USER (Environment release) = nuget.org-Benutzername.
 # - npm: Trusted Publishing je Paket auf npmjs.com mit "Allow npm publish".
-#   Die erste Version eines neuen Pakets läuft über npm stage publish (siehe README).
+#   Neue Pakete stellt der Workflow per npm stage publish bereit (Secret NPM_STAGE_TOKEN),
+#   online gehen sie nach Freigabe mit 2FA; danach Trusted Publisher einrichten.
 name: Release
 
 on:
@@ -76,4 +77,27 @@ jobs:
       - run: npm version "${{ needs.version.outputs.version }}" --workspaces --no-git-tag-version
       - run: npm run build
       - run: npm test
-      - run: npm publish --workspaces --access public --provenance
+      # npm stage gibt es ab npm 11.17; die Version ist fest, damit der Ablauf reproduzierbar bleibt.
+      - run: npm install -g npm@11.17.0
+      # Bestehende Pakete: npm publish per Trusted Publishing (OIDC).
+      # Neue Pakete: npm stage publish mit dem Secret NPM_STAGE_TOKEN (Berechtigung "stage only");
+      # online gehen sie erst nach Freigabe mit 2FA (npm stage approve oder npmjs.com).
+      - name: npm publish
+        env:
+          NPM_STAGE_TOKEN: ${{ secrets.NPM_STAGE_TOKEN }}
+        run: |
+          set -euo pipefail
+          for manifest in packages/*/package.json; do
+            name="$(node -p "require('./$manifest').name")"
+            if npm view "$name" name >/dev/null 2>&1; then
+              echo "$name: npm publish"
+              npm publish -w "$name" --access public --provenance
+            else
+              if [ -z "$NPM_STAGE_TOKEN" ]; then
+                echo "::error::$name ist neu auf npm. Dafür braucht der Workflow das Secret NPM_STAGE_TOKEN (Granular Token, stage only)."
+                exit 1
+              fi
+              echo "::notice::$name ist neu und wird per npm stage publish bereitgestellt. Freigabe: npm stage list, dann npm stage approve <id>."
+              NODE_AUTH_TOKEN="$NPM_STAGE_TOKEN" npm stage publish -w "$name" --access public --provenance
+            fi
+          done

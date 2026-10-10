@@ -1,8 +1,10 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/Bfs.Seed.Auth/Bfs.Seed.Auth.csproj" />
     <Project Path="src/Bfs.Seed.Functions.Core/Bfs.Seed.Functions.Core.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/Bfs.Seed.Auth.Tests/Bfs.Seed.Auth.Tests.csproj" />
     <Project Path="tests/Bfs.Seed.Functions.Core.Tests/Bfs.Seed.Functions.Core.Tests.csproj" />
   </Folder>
 </Solution>

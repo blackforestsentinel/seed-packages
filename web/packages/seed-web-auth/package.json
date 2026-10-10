@@ -1,0 +1,40 @@
+{
+  "name": "@blackforestsentinel/seed-web-auth",
+  "version": "0.0.0-dev",
+  "description": "Anmeldung per MSAL für Frontends in Sentinel-Seed-Projekten: Login, Logout und Access-Tokens für die Function-API.",
+  "license": "MIT",
+  "author": "Black Forest Sentinel",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/blackforestsentinel/seed-packages.git",
+    "directory": "web/packages/seed-web-auth"
+  },
+  "homepage": "https://github.com/blackforestsentinel/seed-packages/tree/main/web/packages/seed-web-auth",
+  "keywords": [
+    "sentinel-seed",
+    "msal",
+    "entra-id"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@azure/msal-browser": "^5.25.0"
+  }
+}

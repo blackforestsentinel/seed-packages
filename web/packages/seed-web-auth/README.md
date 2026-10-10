@@ -16,4 +16,4 @@ if (isSeedAuthConfig(config.auth)) {
 
 - `createSeedAuth()` schließt eine laufende Anmeldung per Redirect ab; danach ist `account` gesetzt.
 - `getAccessToken()` holt Tokens still und leitet nur um, wenn Entra ID eine Interaktion verlangt. Dann wirft es `SeedAuthRedirectError`.
-- Redirect-Ziel ist der Origin der Seite. Das Terraform-Modul `sso` trägt die URL der Static Web App und in `dev` `http://localhost:5173` ein.
+- Redirect-Ziel ist der Origin der Seite mit abschließendem Schrägstrich (`https://app.example.org/`). Das Terraform-Modul `sso` trägt genau diese Form für die Static Web App und in `dev` für `http://localhost:5173/` ein.

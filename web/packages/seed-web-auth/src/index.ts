@@ -15,7 +15,10 @@ export interface SeedAuthConfig {
 }
 
 export interface SeedAuthOptions {
-  /** Ziel nach Login und Logout, Default ist der Origin der Seite. Muss an der App-Registrierung hinterlegt sein. */
+  /**
+   * Ziel nach Login und Logout. Default ist der Origin der Seite mit abschließendem
+   * Schrägstrich, so wie das Terraform-Modul sso ihn an der App-Registrierung hinterlegt.
+   */
   redirectUri?: string;
   /** Eigene MSAL-Instanz, etwa für Tests. */
   client?: IPublicClientApplication;
@@ -53,7 +56,7 @@ export function isSeedAuthConfig(value: unknown): value is SeedAuthConfig {
  * account gesetzt, wenn die Person angemeldet ist.
  */
 export async function createSeedAuth(config: SeedAuthConfig, options: SeedAuthOptions = {}): Promise<SeedAuth> {
-  const redirectUri = options.redirectUri ?? window.location.origin;
+  const redirectUri = options.redirectUri ?? `${window.location.origin}/`;
   const client =
     options.client ??
     (await createStandardPublicClientApplication({

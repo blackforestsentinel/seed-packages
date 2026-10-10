@@ -27,8 +27,9 @@ git push origin v0.1.0
 
 Der Workflow authentifiziert sich per Trusted Publishing (OIDC) bei nuget.org und npm. Einrichtung:
 
-- **nuget.org:** Trusted-Publishing-Richtlinie für `blackforestsentinel/seed-packages`, Workflow `release.yml`, Environment `release`. Repository-Variable `NUGET_USER` mit dem nuget.org-Benutzernamen.
-- **npm:** Trusted Publisher je Paket auf npmjs.com. Ein Paket muss dafür schon existieren; für die Erstveröffentlichung einmalig das Secret `NPM_TOKEN` setzen und danach löschen.
+- **nuget.org:** Trusted-Publishing-Richtlinie für `blackforestsentinel/seed-packages`, Workflow `release.yml`, Environment `release`. Variable `NUGET_USER` im Environment `release` mit dem nuget.org-Benutzernamen.
+- **npm:** Trusted Publisher je Paket auf npmjs.com (`seed-packages`, `release.yml`, Environment `release`, „Allow npm publish“). Eine neue Verbindung verfällt nach 48 Stunden, wenn bis dahin keine Veröffentlichung über sie läuft.
+- **Neues npm-Paket:** Trusted Publishing lässt sich erst einrichten, wenn das Paket existiert. Die erste Version per `npm stage publish` bereitstellen und von einer Maintainerin oder einem Maintainer mit 2FA freigeben lassen; direktes Veröffentlichen per Token entfällt ab Januar 2027.
 - **GitHub:** Environment `release` mit Schutzregel, damit nur Tags veröffentlichen.
 
 ## Lizenz

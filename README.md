@@ -8,6 +8,7 @@ Code-Bausteine für Projekte aus dem [Sentinel-Seed-Template](https://github.com
 | [`@blackforestsentinel/seed-web-core`](web/packages/seed-web-core) | npm | `loadRuntimeConfig()`, `createHttpClient()` |
 | [`Bfs.Seed.Auth`](dotnet/src/Bfs.Seed.Auth) | nuget.org | `UseSeedAuth()`: Token-Prüfung gegen Entra ID, `[AllowAnonymous]` für Ausnahmen |
 | [`@blackforestsentinel/seed-web-auth`](web/packages/seed-web-auth) | npm | `createSeedAuth()`: Login per MSAL, Access-Tokens für die API |
+| [`Bfs.Seed.Mcp`](dotnet/src/Bfs.Seed.Mcp) | nuget.org | `AddSeedMcp()`: MCP-Server unter `/api/mcp` mit Metadaten nach RFC 9728, Werkzeuge per Attribut, Capabilities je Werkzeug |
 
 Geplant: `Bfs.Seed.Storage`, `Bfs.Seed.OpenApi`.
 

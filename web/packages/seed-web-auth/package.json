@@ -1,7 +1,7 @@
 {
   "name": "@blackforestsentinel/seed-web-auth",
   "version": "0.0.0-dev",
-  "description": "Anmeldung per MSAL für Frontends in Sentinel-Seed-Projekten: Login, Logout und Access-Tokens für die Function-API.",
+  "description": "Anmeldung per MSAL für Frontends in Sentinel-Seed-Projekten: Login mit stiller Erneuerung, Access-Tokens für die Function-API und Capabilities der angemeldeten Person für das UI.",
   "license": "MIT",
   "author": "Black Forest Sentinel",
   "type": "module",
@@ -10,6 +10,14 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./react": {
+      "types": "./dist/react.d.ts",
+      "import": "./dist/react.js"
+    },
+    "./bridge": {
+      "types": "./dist/bridge.d.ts",
+      "import": "./dist/bridge.js"
     }
   },
   "files": [
@@ -24,7 +32,8 @@
   "keywords": [
     "sentinel-seed",
     "msal",
-    "entra-id"
+    "entra-id",
+    "react"
   ],
   "publishConfig": {
     "access": "public",
@@ -36,5 +45,20 @@
   },
   "dependencies": {
     "@azure/msal-browser": "^5.25.0"
+  },
+  "peerDependencies": {
+    "react": ">=18"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "jsdom": "30.1.2",
+    "react": "19.3.0",
+    "react-dom": "19.3.0"
   }
 }

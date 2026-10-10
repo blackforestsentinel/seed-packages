@@ -16,4 +16,11 @@ public static class SeedPrincipalExtensions
     /// <summary>App-Rollen aus dem Token.</summary>
     public static IReadOnlySet<string> GetRoles(this ClaimsPrincipal principal) =>
         principal.FindAll(SeedClaimTypes.Role).Select(c => c.Value).ToHashSet(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Ob eine Anwendung ohne angemeldete Person aufruft (Token ohne <c>scp</c>). Ihre
+    /// Capabilities stammen aus App-Rollen für den Mitgliedstyp Application.
+    /// </summary>
+    public static bool IsApplication(this ClaimsPrincipal principal) =>
+        principal.Identity?.IsAuthenticated == true && principal.FindFirst("scp") is null;
 }

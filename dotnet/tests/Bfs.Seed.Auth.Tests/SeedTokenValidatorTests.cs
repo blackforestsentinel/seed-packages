@@ -96,6 +96,16 @@ public class SeedTokenValidatorTests
     }
 
     [Fact]
+    public async Task Roles_CarryDisplayNamesFromProjectYaml()
+    {
+        var result = await CreateValidator(Map).ValidateAsync(CreateToken(roles: ["Reader", "Unbekannt", "Admin"]), TestContext.Current.CancellationToken);
+
+        Assert.Equal(
+            [new("Admin", "Administrator"), new("Reader", "Reader"), new SeedRoleDetail("Unbekannt", "Unbekannt")],
+            result.Principal!.GetRoleDetails());
+    }
+
+    [Fact]
     public async Task DelegatedToken_GetsNoCapabilitiesFromApplicationOnlyRole()
     {
         var result = await CreateValidator(Map).ValidateAsync(CreateToken(roles: ["Sync"]), TestContext.Current.CancellationToken);

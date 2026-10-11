@@ -12,6 +12,7 @@ public class SeedCapabilityMapTests
               description: Liest Rechnungen
               capabilities: [invoices.read]
             Admin:
+              displayName: Administrator
               memberTypes: [User, Application]
               capabilities:
                 - invoices.read
@@ -31,6 +32,8 @@ public class SeedCapabilityMapTests
         Assert.Equal(["Admin", "Reader", "Sync"], map.Roles.Keys.Order());
         Assert.Equal(SeedMemberTypes.User, map.Roles["Reader"].MemberTypes);
         Assert.Equal("Admin", map.Roles["Admin"].Description);
+        Assert.Equal("Administrator", map.Roles["Admin"].DisplayName);
+        Assert.Equal("Reader", map.Roles["Reader"].DisplayName);
         Assert.Equal(SeedMemberTypes.User | SeedMemberTypes.Application, map.Roles["Admin"].MemberTypes);
         Assert.Equal(["invoices.read", "invoices.sync", "invoices.write"], map.Capabilities.Order());
     }
@@ -54,6 +57,15 @@ public class SeedCapabilityMapTests
         Assert.True(map.AllowsApplication(["Reader", "Admin"]));
         Assert.False(map.AllowsApplication(["Reader"]));
         Assert.False(map.AllowsApplication([]));
+    }
+
+    [Fact]
+    public void RoleDefinition_WithoutDisplayName_UsesName()
+    {
+        var role = new SeedRoleDefinition("Reader", "Liest", SeedMemberTypes.User, new HashSet<string>());
+
+        Assert.Equal("Reader", role.DisplayName);
+        Assert.Equal("Leser", (role with { DisplayName = "Leser" }).DisplayName);
     }
 
     [Theory]

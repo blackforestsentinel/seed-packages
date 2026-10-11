@@ -28,6 +28,7 @@ auth:
       description: Liest Rechnungen
       capabilities: [invoices.read]
     Admin:
+      displayName: Administrator         # Standard: der Rollenname
       description: Verwaltet Rechnungen
       memberTypes: [User, Application]   # Standard: [User]
       capabilities: [invoices.read, invoices.write]
@@ -35,8 +36,28 @@ auth:
 
 - Terraform legt aus derselben Datei die App-Rollen an der API-Registrierung an. Personen und Gruppen weist ein Admin in Entra den Rollen zu.
 - Nach der Token-Prüfung löst die Middleware die Rollen aus dem `roles`-Claim in Capabilities auf und hängt sie als Claims `SeedClaimTypes.Capability` an `HttpContext.User`. Es zählen nur Rollen, deren `memberTypes` zum Aufrufer passen.
-- `[RequireCapability("invoices.write")]` an Methode oder Klasse verlangt eine Capability; mehrere Attribute müssen alle erfüllt sein. `User.HasCapability(...)`, `GetCapabilities()` und `GetRoles()` helfen im Code.
-- `SeedUserInfo.From(User)` liefert Name, Benutzername, `oid`, `tid`, Rollen und Capabilities, die Antwort für `GET /api/me`. Das Frontend blendet damit UI-Elemente ein oder aus, ohne die Zuordnung zu kennen. Den Endpunkt legt das Projekt selbst an (im Template `Me/MeFunction.cs`), damit er nicht mit vorhandenen Functions kollidiert und erweiterbar bleibt.
+- `[RequireCapability("invoices.write")]` an Methode oder Klasse verlangt eine Capability; mehrere Attribute müssen alle erfüllt sein. `User.HasCapability(...)`, `GetCapabilities()`, `GetRoles()` und `GetRoleDetails()` helfen im Code.
+- `SeedUserInfo.From(User)` liefert Name, Benutzername, `oid`, `tid`, Rollen, Rollen mit Anzeigenamen und Capabilities, die Antwort für `GET /api/me`. Das Frontend blendet damit UI-Elemente ein oder aus, ohne die Zuordnung zu kennen. Den Endpunkt legt das Projekt selbst an (im Template `Me/MeFunction.cs`), damit er nicht mit vorhandenen Functions kollidiert und erweiterbar bleibt.
+
+### Anzeigenamen der Rollen
+
+`displayName` an einer Rolle ist der Name, den Menschen sehen: Terraform setzt ihn als Anzeigenamen der App-Rolle in Entra, die API gibt ihn in `GET /api/me` mit, etwa für die Rolle im Benutzermenü („Administrator“ statt `Admin`). Ohne `displayName` gilt der Rollenname.
+
+```json
+{
+  "name": "Erika Muster",
+  "roles": ["Admin", "Reader"],
+  "capabilities": ["invoices.read", "invoices.write"],
+  "roleDetails": [
+    { "value": "Admin", "displayName": "Administrator" },
+    { "value": "Reader", "displayName": "Reader" }
+  ]
+}
+```
+
+- `roleDetails` steht in derselben Reihenfolge wie `roles`; alle bisherigen Felder bleiben unverändert.
+- Die Token-Prüfung und der lokale Modus hängen die Anzeigenamen als Claims `SeedClaimTypes.RoleDisplayName` an, `GetRoleDetails()` liest sie. Ein Endpunkt mit `SeedUserInfo.From(User)` braucht dafür keine Änderung.
+- Eine Rolle, die `auth.roles` nicht kennt, und ein Principal ohne Token-Prüfung (etwa in einem Test) bekommen den Rollennamen als Anzeigenamen.
 
 Die API liest die Zuordnung aus `project.yaml` im Ausgabeordner der App (`Auth:ProjectFile`, Standard `project.yaml`). Das Template verlinkt die Datei dorthin:
 

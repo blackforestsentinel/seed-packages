@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using YamlDotNet.Core;
 using YamlDotNet.RepresentationModel;
 
@@ -26,7 +27,20 @@ public sealed record SeedRoleDefinition(
     string Name,
     string Description,
     SeedMemberTypes MemberTypes,
-    IReadOnlySet<string> Capabilities);
+    IReadOnlySet<string> Capabilities)
+{
+    private readonly string? displayName;
+
+    /// <summary>
+    /// Anzeigename aus <c>displayName</c>, etwa „Administrator“ für <c>Admin</c>; erscheint in Entra
+    /// ID und über <see cref="SeedUserInfo.RoleDetails"/> im Frontend. Ohne Angabe der Wert der Rolle.
+    /// </summary>
+    public string DisplayName
+    {
+        get => displayName ?? Name;
+        init => displayName = value;
+    }
+}
 
 /// <summary>
 /// Zentrale Zuordnung von App-Rollen zu Capabilities aus <c>auth.roles</c> in project.yaml.
@@ -113,7 +127,10 @@ public sealed class SeedCapabilityMap
                 name,
                 Scalar(Child(value, "description")) ?? name,
                 memberTypes,
-                capabilities.ToHashSet(StringComparer.Ordinal));
+                capabilities.ToHashSet(StringComparer.Ordinal))
+            {
+                DisplayName = Scalar(Child(value, "displayName")) ?? name,
+            };
         }
 
         return new SeedCapabilityMap(roles, source);
@@ -133,6 +150,17 @@ public sealed class SeedCapabilityMap
     /// <summary>Ob eine der Rollen für Anwendungen ohne angemeldete Person vorgesehen ist.</summary>
     public bool AllowsApplication(IEnumerable<string> roles) =>
         roles.Any(r => Roles.TryGetValue(r, out var role) && role.MemberTypes.HasFlag(SeedMemberTypes.Application));
+
+    /// <summary>
+    /// Je bekannter Rolle ein Claim <see cref="SeedClaimTypes.RoleDisplayName"/> mit ihrem
+    /// Anzeigenamen; unbekannte Rollen ergeben nichts.
+    /// </summary>
+    internal IEnumerable<Claim> DisplayNameClaims(IEnumerable<string> roles) =>
+        roles
+            .Distinct(StringComparer.Ordinal)
+            .Select(r => Roles.GetValueOrDefault(r))
+            .OfType<SeedRoleDefinition>()
+            .Select(r => new Claim(SeedClaimTypes.RoleDisplayName, r.DisplayName) { Properties = { [SeedClaimTypes.RoleProperty] = r.Name } });
 
     private static YamlNode? Child(YamlNode? node, string key) =>
         node is YamlMappingNode mapping && mapping.Children.TryGetValue(new YamlScalarNode(key), out var child) ? child : null;

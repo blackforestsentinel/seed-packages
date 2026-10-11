@@ -154,7 +154,7 @@ public class McpEndpointTests
 
         Assert.Equal(401, response.StatusCode);
         Assert.Equal(
-            "Bearer resource_metadata=\"https://mcp.example.org/api/.well-known/oauth-protected-resource\"",
+            $"Bearer scope=\"api://{McpTestApp.ClientId}/mcp_access offline_access\", resource_metadata=\"https://mcp.example.org/api/.well-known/oauth-protected-resource\"",
             response.Headers.WWWAuthenticate.ToString());
     }
 

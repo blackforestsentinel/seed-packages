@@ -39,6 +39,8 @@ public static class SeedMcpExtensions
 
         // Damit nennt jede 401-Antwort der Token-Prüfung die Metadaten als resource_metadata.
         services.PostConfigure<SeedAuthOptions>(o => o.ResourceMetadataPath ??= SeedMcp.ResourceMetadataPath);
+        // … und für den MCP-Endpunkt den Scope, den der Client bei Entra anfordern soll.
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<ISeedAuthChallengeScope, SeedMcpChallengeScope>());
 
         services.TryAddSingleton<SeedMcpToolCatalog>();
         services.TryAddSingleton<SeedMcpEndpoint>();

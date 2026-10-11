@@ -1,8 +1,8 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { SeedUser } from './user.js';
 
-export { hasCapability, loadSeedUser } from './user.js';
-export type { SeedUser, SeedUserSource } from './user.js';
+export { hasCapability, loadSeedUser, roleDisplayNames } from './user.js';
+export type { SeedRoleDetail, SeedUser, SeedUserSource } from './user.js';
 
 /** Stand der angemeldeten Person: wird geladen, ist da (oder null ohne Anmeldung) oder ist fehlgeschlagen. */
 export type SeedUserState =

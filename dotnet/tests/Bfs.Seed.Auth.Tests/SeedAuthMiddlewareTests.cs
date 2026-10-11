@@ -18,7 +18,8 @@ public class SeedAuthMiddlewareTests
         var (status, called, http) = await InvokeAsync(nameof(CapabilityFunctions.Me), token: null);
 
         Assert.Equal((401, false), (status, called));
-        Assert.Equal("Bearer error=\"missing_token\"", http.Response.Headers.WWWAuthenticate.ToString());
+        // Ohne Token kein Fehlercode (RFC 6750, Abschnitt 3.1).
+        Assert.Equal("Bearer", http.Response.Headers.WWWAuthenticate.ToString());
     }
 
     [Fact]
@@ -100,8 +101,34 @@ public class SeedAuthMiddlewareTests
         var (_, _, http) = await InvokeAsync(nameof(CapabilityFunctions.Me), token: null);
 
         Assert.Equal(
-            "Bearer error=\"missing_token\", resource_metadata=\"https://api.example.org/.well-known/oauth-protected-resource\"",
+            "Bearer resource_metadata=\"https://api.example.org/.well-known/oauth-protected-resource\"",
             http.Response.Headers.WWWAuthenticate.ToString());
+    }
+
+    [Fact]
+    public async Task ChallengeScope_IsNamedAndBeatsShortScopes()
+    {
+        var challenge = new FixedChallengeScope("https://mcp.example.org/api/mcp/mcp_access offline_access");
+
+        var missing = await InvokeAsync(nameof(CapabilityFunctions.Me), token: null, challenge: challenge);
+        var other = await InvokeAsync(nameof(ScopedFunctions.Tools), tokens.CreateToken(scope: "other", roles: ["Reader"]), typeof(ScopedFunctions), challenge);
+
+        Assert.Equal(
+            "Bearer scope=\"https://mcp.example.org/api/mcp/mcp_access offline_access\"",
+            missing.Http.Response.Headers.WWWAuthenticate.ToString());
+        Assert.Equal(
+            "Bearer error=\"insufficient_scope\", scope=\"https://mcp.example.org/api/mcp/mcp_access offline_access\"",
+            other.Http.Response.Headers.WWWAuthenticate.ToString());
+    }
+
+    [Fact]
+    public async Task ChallengeScope_WithoutMatch_KeepsShortScopes()
+    {
+        var other = await InvokeAsync(nameof(ScopedFunctions.Tools), tokens.CreateToken(scope: "other", roles: ["Reader"]), typeof(ScopedFunctions), new FixedChallengeScope(null));
+
+        Assert.Equal(
+            "Bearer error=\"insufficient_scope\", scope=\"mcp_access access_as_user\"",
+            other.Http.Response.Headers.WWWAuthenticate.ToString());
     }
 
     [Fact]
@@ -129,7 +156,8 @@ public class SeedAuthMiddlewareTests
         Assert.Equal(["invoices.read", "invoices.write"], requirements.Capabilities.Order());
     }
 
-    private async Task<(int Status, bool Called, HttpContext Http)> InvokeAsync(string method, string? token, Type? type = null)
+    private async Task<(int Status, bool Called, HttpContext Http)> InvokeAsync(
+        string method, string? token, Type? type = null, ISeedAuthChallengeScope? challenge = null)
     {
         var http = new DefaultHttpContext();
         http.Request.Host = new HostString("api.example.org");
@@ -142,7 +170,8 @@ public class SeedAuthMiddlewareTests
             tokens.CreateValidator(Map),
             Options.Create(tokens.AuthOptions),
             Map,
-            NullLogger<SeedAuthMiddleware>.Instance);
+            NullLogger<SeedAuthMiddleware>.Instance,
+            challenge is null ? null : [challenge]);
 
         var called = false;
         await middleware.Invoke(new TestFunctionContext($"{(type ?? typeof(CapabilityFunctions)).FullName}.{method}", http), _ =>
@@ -152,6 +181,11 @@ public class SeedAuthMiddlewareTests
         });
 
         return (http.Response.StatusCode, called, http);
+    }
+
+    private sealed class FixedChallengeScope(string? scope) : ISeedAuthChallengeScope
+    {
+        public string? For(HttpRequest request) => scope;
     }
 
     private sealed class TestFunctionContext(string entryPoint, HttpContext http) : FunctionContext

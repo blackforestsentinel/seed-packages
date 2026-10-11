@@ -74,12 +74,12 @@ public class SeedSecretsTests
             ("Secrets:StripeKey", "seed-placeholder:stripe-key"),
             ("Secrets:SmtpPassword", Value),
             ("APPSETTING_Secrets:StripeKey", "seed-placeholder:stripe-key"),
-            ("Ffh:Weclapp:Token", "@Microsoft.KeyVault(SecretUri=https://kv-x.vault.azure.net/secrets/weclapp-token/)"),
+            ("Legacy:ApiToken", "@Microsoft.KeyVault(SecretUri=https://kv-x.vault.azure.net/secrets/legacy-api-token/)"),
             ("Seed:Project", "kundenportal"));
 
         Assert.Equal(
             [
-                new SeedSecretProblem("Ffh__Weclapp__Token", "weclapp-token", SeedSecretState.Unresolved),
+                new SeedSecretProblem("Legacy__ApiToken", "legacy-api-token", SeedSecretState.Unresolved),
                 new SeedSecretProblem("Secrets__StripeKey", "stripe-key", SeedSecretState.Placeholder),
             ],
             secrets.Problems);

@@ -99,3 +99,12 @@ Weitere Einstellungen: `Auth__LocalUser__Name`, `__Username`, `__ObjectId`, `__T
 ## MCP und Protected Resource Metadata
 
 Mit `Auth:ResourceMetadataPath` (z. B. `/.well-known/oauth-protected-resource`) nennt jede 401- und 403-Antwort die Metadaten nach RFC 9728 im Header `WWW-Authenticate` als `resource_metadata`. MCP-Clients finden darüber den Weg zur Anmeldung.
+
+- **Ohne Token:** Die 401 enthält keinen Fehlercode, nach RFC 6750 (Abschnitt 3.1).
+- **Scope:** Eine registrierte Umsetzung von `ISeedAuthChallengeScope` nennt für eine Anfrage den voll qualifizierten Scope, den 401 und 403 als `scope` angeben. Bfs.Seed.Mcp tut das für `/api/mcp`, etwa `scope="https://mcp.example.org/api/mcp/mcp_access offline_access"`.
+
+Beispiel für den MCP-Endpunkt ohne Token:
+
+```
+WWW-Authenticate: Bearer scope="https://mcp.example.org/api/mcp/mcp_access offline_access", resource_metadata="https://mcp.example.org/api/.well-known/oauth-protected-resource"
+```

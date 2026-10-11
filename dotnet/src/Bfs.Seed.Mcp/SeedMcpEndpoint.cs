@@ -26,7 +26,7 @@ internal sealed class SeedMcpEndpoint(
 {
     // Entra stellt nur mit offline_access ein Refresh-Token aus. Nicht jeder Client fordert es
     // von sich aus an; ohne müsste man sich nach einer Stunde neu verbinden.
-    private const string OfflineAccess = "offline_access";
+    internal const string OfflineAccess = "offline_access";
 
     private static readonly string Version = ReadVersion();
 
@@ -47,8 +47,9 @@ internal sealed class SeedMcpEndpoint(
         var user = http.User;
         if (user.Identity?.IsAuthenticated != true)
         {
+            var resource = SeedMcpResource.For(request, options.Value, authOptions.Value);
             http.Response.Headers.WWWAuthenticate =
-                $"Bearer resource_metadata=\"{SeedMcpResource.BaseUrl(request)}{SeedMcp.ResourceMetadataPath}\"";
+                $"Bearer scope=\"{resource.Scope} {OfflineAccess}\", resource_metadata=\"{SeedMcpResource.BaseUrl(request)}{SeedMcp.ResourceMetadataPath}\"";
             return new UnauthorizedResult();
         }
 

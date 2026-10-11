@@ -19,7 +19,8 @@ internal sealed class SeedAuthMiddleware(
     SeedTokenValidator validator,
     IOptions<SeedAuthOptions> options,
     SeedCapabilityMap capabilities,
-    ILogger<SeedAuthMiddleware> logger)
+    ILogger<SeedAuthMiddleware> logger,
+    IEnumerable<ISeedAuthChallengeScope>? challengeScopes = null)
     : IFunctionsWorkerMiddleware
 {
     private static readonly ConcurrentDictionary<string, FunctionRequirements> Requirements = new();
@@ -54,7 +55,9 @@ internal sealed class SeedAuthMiddleware(
             var header = http.Request.Headers.Authorization.ToString();
             if (!header.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
             {
-                Reject(http, StatusCodes.Status401Unauthorized, "missing_token");
+                // Ohne Token kein Fehlercode (RFC 6750, Abschnitt 3.1): Der Client weiß nur noch
+                // nicht, dass er sich anmelden muss.
+                Reject(http, StatusCodes.Status401Unauthorized, error: null);
                 return;
             }
 
@@ -123,24 +126,32 @@ internal sealed class SeedAuthMiddleware(
             Capabilities: attributes.OfType<RequireCapabilityAttribute>().Select(a => a.Capability).Distinct(StringComparer.Ordinal).ToList());
     }
 
-    private void Reject(HttpContext http, int status, string error, IReadOnlyList<string>? scopes = null)
+    private void Reject(HttpContext http, int status, string? error, IReadOnlyList<string>? scopes = null)
     {
         http.Response.StatusCode = status;
-        var challenge = $"Bearer error=\"{error}\"";
-        if (scopes is not null)
+        var request = http.Request;
+        var parameters = new List<string>();
+        if (error is not null)
         {
-            challenge += $", scope=\"{string.Join(' ', scopes)}\"";
+            parameters.Add($"error=\"{error}\"");
+        }
+
+        // Voll qualifizierte Scopes (etwa vom MCP-Endpunkt) gehen den Kurznamen aus [RequireScope] vor.
+        var scope = challengeScopes?.Select(c => c.For(request)).FirstOrDefault(s => !string.IsNullOrWhiteSpace(s))
+            ?? (scopes is null ? null : string.Join(' ', scopes));
+        if (scope is not null)
+        {
+            parameters.Add($"scope=\"{scope}\"");
         }
 
         if (!string.IsNullOrWhiteSpace(options.Value.ResourceMetadataPath))
         {
             // Hinter dem Functions-Host kommt die Anfrage intern per HTTP an; nach außen gilt HTTPS.
-            var request = http.Request;
             var scheme = request.Host.Host is "localhost" or "127.0.0.1" ? request.Scheme : "https";
-            challenge += $", resource_metadata=\"{scheme}://{request.Host}{options.Value.ResourceMetadataPath}\"";
+            parameters.Add($"resource_metadata=\"{scheme}://{request.Host}{options.Value.ResourceMetadataPath}\"");
         }
 
-        http.Response.Headers.WWWAuthenticate = challenge;
+        http.Response.Headers.WWWAuthenticate = parameters.Count == 0 ? "Bearer" : $"Bearer {string.Join(", ", parameters)}";
     }
 
     /// <summary>Was eine Function verlangt, einmal je Function per Reflection ermittelt.</summary>

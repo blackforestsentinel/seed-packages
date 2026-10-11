@@ -7,7 +7,8 @@ Code-Bausteine für Projekte aus dem [Sentinel-Seed-Template](https://github.com
 | [`Bfs.Seed.Functions.Core`](dotnet/src/Bfs.Seed.Functions.Core) | nuget.org | `AddSeedCore()`: Application Insights, `SeedOptions`, `SeedHealthReport`, `SeedSecrets` mit Prüfung beim Start |
 | [`@blackforestsentinel/seed-web-core`](web/packages/seed-web-core) | npm | `loadRuntimeConfig()`, `createHttpClient()` |
 | [`Bfs.Seed.Auth`](dotnet/src/Bfs.Seed.Auth) | nuget.org | `UseSeedAuth()`: Token-Prüfung gegen Entra ID, `[AllowAnonymous]` für Ausnahmen |
-| [`@blackforestsentinel/seed-web-auth`](web/packages/seed-web-auth) | npm | `createSeedAuth()`: Login per MSAL, Access-Tokens für die API |
+| [`@blackforestsentinel/seed-web-auth`](web/packages/seed-web-auth) | npm | `createSeedAuth()`: Login per MSAL, Access-Tokens für die API und für Microsoft Graph |
+| [`@blackforestsentinel/seed-web-people`](web/packages/seed-web-people) | npm | React-Komponenten für Personen: `Avatar`, `CurrentUserMenu`, `PeoplePicker`, `PersonCard`, `SignInPage`, `AccessDenied`, Daten aus Microsoft Graph im Browser |
 | [`Bfs.Seed.Mcp`](dotnet/src/Bfs.Seed.Mcp) | nuget.org | `AddSeedMcp()`: MCP-Server unter `/api/mcp` mit Metadaten nach RFC 9728, Werkzeuge per Attribut, Capabilities je Werkzeug |
 | [`Bfs.Seed.Storage`](dotnet/src/Bfs.Seed.Storage) | nuget.org | `AddSeedStorage()`: Clients für Table, Blob und Queue (Managed Identity, lokal Azurite), Table-Repository mit ETag, Partition je `oid`/`tid`, Queue-Nachrichten passend zum Trigger |
 
@@ -24,7 +25,7 @@ Die Integrationstests von `Bfs.Seed.Storage` laufen gegen Azurite (`npm install 
 
 ## Veröffentlichen
 
-Alle Pakete erscheinen gemeinsam in der Version des Git-Tags. Veröffentlicht wird nur aus [`release.yml`](.github/workflows/release.yml), nie lokal:
+Alle Pakete erscheinen gemeinsam in der Version des Git-Tags. Im Repo stehen Versionen und Abhängigkeiten der npm-Pakete untereinander auf `0.0.0-dev`; [`web/scripts/set-version.mjs`](web/scripts/set-version.mjs) setzt sie im Workflow auf die Version des Tags. Veröffentlicht wird nur aus [`release.yml`](.github/workflows/release.yml), nie lokal:
 
 ```bash
 git tag v0.1.0

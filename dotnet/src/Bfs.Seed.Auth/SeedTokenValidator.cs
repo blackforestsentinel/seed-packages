@@ -31,7 +31,8 @@ public sealed record SeedTokenValidationResult(ClaimsPrincipal? Principal, strin
 /// Prüft Bearer-Tokens aus Entra ID: Signatur gegen die Schlüssel des Tenants, Aussteller,
 /// Audience, Laufzeit und die delegierte Berechtigung. Tokens ohne angemeldete Person (ohne
 /// <c>scp</c>) gelten nur mit einer App-Rolle, die <c>auth.roles</c> für Anwendungen vorsieht.
-/// Die Capabilities aus den App-Rollen hängt die Prüfung als <see cref="SeedClaimTypes.Capability"/> an.
+/// Die Capabilities aus den App-Rollen hängt die Prüfung als <see cref="SeedClaimTypes.Capability"/> an,
+/// die Anzeigenamen der Rollen als <see cref="SeedClaimTypes.RoleDisplayName"/>.
 /// </summary>
 public sealed class SeedTokenValidator
 {
@@ -114,6 +115,9 @@ public sealed class SeedTokenValidator
         {
             identity.AddClaim(new Claim(SeedClaimTypes.Capability, capability));
         }
+
+        // Anzeigenamen der Rollen für GET /api/me (SeedUserInfo.RoleDetails).
+        identity.AddClaims(capabilities.DisplayNameClaims(roles));
 
         return new SeedTokenValidationResult(new ClaimsPrincipal(identity), null);
     }

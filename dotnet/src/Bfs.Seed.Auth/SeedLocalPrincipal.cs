@@ -24,6 +24,7 @@ internal static class SeedLocalPrincipal
 
         identity.AddClaims(user.Roles.Select(r => new Claim(SeedClaimTypes.Role, r)));
         identity.AddClaims(map.Resolve(user.Roles, SeedMemberTypes.User).Select(c => new Claim(SeedClaimTypes.Capability, c)));
+        identity.AddClaims(map.DisplayNameClaims(user.Roles));
         return new ClaimsPrincipal(identity);
     }
 }

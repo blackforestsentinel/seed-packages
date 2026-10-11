@@ -1,0 +1,57 @@
+{
+  "name": "@blackforestsentinel/seed-web-people",
+  "version": "0.0.0-dev",
+  "description": "React-Komponenten für Personen in Sentinel-Seed-Frontends: Avatar, Benutzermenü, Personenauswahl, Karten und Anmeldeseiten, mit Daten aus Microsoft Graph direkt im Browser.",
+  "license": "MIT",
+  "author": "Black Forest Sentinel",
+  "type": "module",
+  "sideEffects": [
+    "**/*.css"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./styles.css": "./dist/styles.css"
+  },
+  "files": [
+    "dist"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/blackforestsentinel/seed-packages.git",
+    "directory": "web/packages/seed-web-people"
+  },
+  "homepage": "https://github.com/blackforestsentinel/seed-packages/tree/main/web/packages/seed-web-people",
+  "keywords": [
+    "sentinel-seed",
+    "microsoft-graph",
+    "entra-id",
+    "react",
+    "people-picker",
+    "avatar"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && node scripts/copy-styles.mjs",
+    "test": "vitest run"
+  },
+  "peerDependencies": {
+    "@blackforestsentinel/seed-web-auth": "0.0.0-dev",
+    "react": ">=18"
+  },
+  "devDependencies": {
+    "@blackforestsentinel/seed-web-auth": "0.0.0-dev",
+    "@testing-library/dom": "10.4.2",
+    "@testing-library/react": "16.3.3",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "jsdom": "30.1.2",
+    "react": "19.3.0",
+    "react-dom": "19.3.0"
+  }
+}

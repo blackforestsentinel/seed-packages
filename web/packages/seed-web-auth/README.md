@@ -16,6 +16,7 @@ if (isSeedAuthConfig(config.auth)) {
 
 - `createSeedAuth()` schließt eine laufende Anmeldung per Redirect ab; danach ist `account` gesetzt.
 - `getAccessToken()` holt Tokens still und leitet nur um, wenn Entra ID eine Interaktion verlangt. Dann wirft es `SeedAuthRedirectError`.
+- `getAccessToken(scopes)` holt ein Token für genau diese Berechtigungen, etwa für Microsoft Graph (unten).
 - Redirect-Ziel ist der Origin der Seite mit abschließendem Schrägstrich (`https://app.example.org/`). Das Terraform-Modul `sso` trägt genau diese Form für die Static Web App und in `dev` für `http://localhost:5173/` ein.
 
 ## Stille Sitzungserneuerung
@@ -45,6 +46,35 @@ void handleSeedAuthRedirect();
 
 Die Redirect-URI `<origin>/redirect.html` trägt das Modul `sso` mit `spa_redirect_bridge_path = "/redirect.html"` ein und schreibt `redirectBridgePath` in `config.json`.
 
+## Tokens für Microsoft Graph
+
+`getAccessToken()` ohne Argument liefert das Token für die API. Mit einer Liste von Scopes liefert es eines für genau diese, etwa für Graph:
+
+```ts
+const token = await auth.getAccessToken(['https://graph.microsoft.com/User.ReadBasic.All']);
+```
+
+- Dieselbe Reihenfolge wie für die API: Cache und Refresh-Token, dann `ssoSilent`, dann Umleitung.
+- Parallele Aufrufe je Scope-Satz teilen sich eine Anfrage; die Reihenfolge der Scopes spielt keine Rolle.
+- Fehlt die Einwilligung, leitet es je Tab und Scope-Satz höchstens zweimal um: erst ohne Dialog, dann mit, damit die Person zustimmen kann. Danach wirft es `SeedAuthScopeError` statt erneut umzuleiten, und die App läuft ohne diese Berechtigungen weiter. Kommt die Umleitung mit `access_denied` zurück (Einwilligung abgelehnt oder nicht erlaubt), startet die App trotzdem.
+- Ein Token für die API setzt den Merker für Graph nicht zurück, `logout()` schon.
+
+`@blackforestsentinel/seed-web-people` holt so Fotos und Profile. Welche Graph-Berechtigungen das Frontend anfragt, steht in `config.json` unter `auth.directory` (Typ `SeedDirectoryConfig`); das Terraform-Modul `sso` schreibt den Teil, wenn `project.yaml` das Verzeichnis einschaltet:
+
+```json
+"auth": {
+  "clientId": "…", "tenantId": "…", "apiScope": "…", "redirectBridgePath": "/redirect.html",
+  "directory": {
+    "scopes": ["https://graph.microsoft.com/User.Read", "https://graph.microsoft.com/User.ReadBasic.All", "https://graph.microsoft.com/People.Read", "https://graph.microsoft.com/Presence.Read.All"],
+    "presence": true,
+    "roleFilter": false,
+    "apiClientId": "<Client-ID der API-Registrierung>"
+  }
+}
+```
+
+Im lokalen Modus gibt es keinen Graph-Zugriff; `auth.directory.people` enthält dort erfundene Personen (Typ `SeedLocalDirectoryConfig`).
+
 ## Capabilities im UI
 
 Die API liefert unter `GET /api/me` die angemeldete Person samt Capabilities, aufgelöst aus ihren App-Rollen (`SeedUserInfo` aus `Bfs.Seed.Auth`). Das Frontend kennt die Zuordnung nicht, es blendet nur ein oder aus. Durchgesetzt werden die Rechte in der API per `[RequireCapability]`.
@@ -63,6 +93,7 @@ const canWrite = useCapabilities().has('invoices.write');
 
 - `SeedUserProvider` lädt die Person einmal beim Einhängen; solange sie lädt, ohne Anmeldung oder bei einem Fehler sind keine Capabilities gesetzt und geschützte Elemente bleiben aus.
 - `useSeedUser()` liefert `{ status, user }` mit `status` `loading`, `ready` oder `error`.
+- `user.roleDetails` nennt die Anzeigenamen der Rollen aus `project.yaml` (`{ value: 'Admin', displayName: 'Administrator' }`), wenn die API sie liefert; `roleDisplayNames(user)` gibt sie in der Reihenfolge von `roles` zurück, ohne Anzeigenamen den Wert.
 - Ohne React: `loadSeedUser(http)` und `hasCapability(user, 'invoices.write')` aus dem Haupteinstieg.
 
 Der Einstieg `/react` braucht React ab Version 18 und lädt MSAL nicht.

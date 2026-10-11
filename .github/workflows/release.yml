@@ -74,7 +74,9 @@ jobs:
           node-version: 24
           registry-url: https://registry.npmjs.org
       - run: npm ci
-      - run: npm version "${{ needs.version.outputs.version }}" --workspaces --no-git-tag-version
+      # Version und Abhängigkeiten der Pakete untereinander (im Repo 0.0.0-dev), etwa die
+      # Peer-Abhängigkeit von seed-web-people auf seed-web-auth. npm version passt diese nicht an.
+      - run: node scripts/set-version.mjs "${{ needs.version.outputs.version }}"
       - run: npm run build
       - run: npm test
       # npm stage gibt es ab npm 11.17; die Version ist fest, damit der Ablauf reproduzierbar bleibt.

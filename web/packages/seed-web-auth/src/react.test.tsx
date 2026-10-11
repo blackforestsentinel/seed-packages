@@ -3,7 +3,7 @@ import { act, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, describe, expect, it } from 'vitest';
 import { IfCapability, SeedUserProvider, useSeedUser } from './react.js';
-import { hasCapability, loadSeedUser, type SeedUser } from './user.js';
+import { hasCapability, loadSeedUser, roleDisplayNames, type SeedUser } from './user.js';
 
 declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean;
@@ -118,5 +118,24 @@ describe('loadSeedUser', () => {
     expect(hasCapability(user, 'invoices.read')).toBe(true);
     expect(hasCapability(user, 'invoices.write')).toBe(false);
     expect(hasCapability(null, 'invoices.read')).toBe(false);
+  });
+
+  it('übernimmt die Anzeigenamen der Rollen, wenn die API sie liefert', async () => {
+    const http = {
+      get: async <T,>() =>
+        ({
+          name: 'Erika Muster',
+          roles: ['Admin', 'Reader'],
+          roleDetails: [{ value: 'Admin', displayName: 'Administrator' }, { value: 'kaputt' }],
+          capabilities: [],
+        }) as T,
+    };
+
+    const user = await loadSeedUser(http);
+
+    expect(user.roleDetails).toEqual([{ value: 'Admin', displayName: 'Administrator' }]);
+    expect(roleDisplayNames(user)).toEqual(['Administrator', 'Reader']);
+    expect(roleDisplayNames(admin)).toEqual(['Admin']);
+    expect(roleDisplayNames(null)).toEqual([]);
   });
 });

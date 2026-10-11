@@ -54,11 +54,15 @@ jobs:
         id: login
         with:
           user: ${{ vars.NUGET_USER }}
+      # Das Zeitlimit gilt für den ganzen Befehl, alle Pakete samt Symbolen. Der Standard (300 s)
+      # reichte nicht, nuget.org brauchte über zwei Minuten je Paket. Der Schlüssel
+      # aus NuGet/login gilt eine Stunde; 45 Minuten bleiben darunter.
       - run: >
           dotnet nuget push "../artifacts/nuget/*.nupkg"
           --api-key "${{ steps.login.outputs.NUGET_API_KEY }}"
           --source https://api.nuget.org/v3/index.json
           --skip-duplicate
+          --timeout 2700
 
   npm:
     needs: version

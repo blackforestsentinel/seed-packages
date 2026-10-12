@@ -1,0 +1,44 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Description>OpenAPI 2.0 (Swagger) für Azure Functions (dotnet-isolated) in Sentinel-Seed-Projekten: Attribute an den HTTP-Functions, openapi.json entsteht beim Build, etwa für den Custom Connector der Power Platform.</Description>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <PackageTags>$(PackageTags);openapi;swagger;power-platform;custom-connector</PackageTags>
+  </PropertyGroup>
+
+  <!-- Keine Paket-Abhängigkeiten: Functions- und ASP.NET-Attribute liest der Generator über den Namen. -->
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+    <None Include="build\Bfs.Seed.OpenApi.targets" Pack="true" PackagePath="build\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Bfs.Seed.OpenApi.Tests" />
+  </ItemGroup>
+
+  <!--
+    Export-Werkzeug für den Build der App: kein eigenes Paket und keine Abhängigkeit, sondern unter
+    tools/net10.0 in diesem Paket. Die Referenz sorgt nur dafür, dass es vorher gebaut ist;
+    Private="false", damit seine runtimeconfig und deps nicht in fremden Ausgabeordnern landen.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\Bfs.Seed.OpenApi.Export\Bfs.Seed.OpenApi.Export.csproj" ReferenceOutputAssembly="false" Private="false" PrivateAssets="all" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetsForTfmSpecificContentInPackage>$(TargetsForTfmSpecificContentInPackage);_SeedOpenApiPackTool</TargetsForTfmSpecificContentInPackage>
+  </PropertyGroup>
+
+  <Target Name="_SeedOpenApiPackTool">
+    <MSBuild Projects="..\Bfs.Seed.OpenApi.Export\Bfs.Seed.OpenApi.Export.csproj" Targets="GetTargetPath" RemoveProperties="TargetFramework">
+      <Output TaskParameter="TargetOutputs" PropertyName="_SeedOpenApiToolPath" />
+    </MSBuild>
+    <ItemGroup>
+      <TfmSpecificPackageFile Include="$(_SeedOpenApiToolPath)" PackagePath="tools/net10.0/" />
+      <TfmSpecificPackageFile Include="$([System.IO.Path]::ChangeExtension('$(_SeedOpenApiToolPath)', '.runtimeconfig.json'))" PackagePath="tools/net10.0/" />
+      <TfmSpecificPackageFile Include="$([System.IO.Path]::ChangeExtension('$(_SeedOpenApiToolPath)', '.deps.json'))" PackagePath="tools/net10.0/" />
+    </ItemGroup>
+  </Target>
+
+</Project>

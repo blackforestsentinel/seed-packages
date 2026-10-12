@@ -1,0 +1,77 @@
+<Project>
+
+  <!--
+    Bfs.Seed.OpenApi: openapi.json (Swagger 2.0) nach jedem Build unter $(OutDir)openapi/openapi.json,
+    ohne den Functions-Host zu starten. Nur für das Projekt mit der PackageReference, nicht für
+    Projekte, die es referenzieren (etwa Tests). Einstellungen, alle optional:
+
+      SeedOpenApiEnabled=false   kein Export; Standard: an für ausführbare Projekte (Function-Apps)
+      SeedOpenApiOutputPath      anderer Ort für die Datei
+      SeedOpenApiPublishDir      bei dotnet publish zusätzlich dorthin kopieren, etwa als
+                                 Pipeline-Artefakt; ins Deploy-Paket der Function kommt die Datei nicht
+  -->
+  <PropertyGroup>
+    <SeedOpenApiEnabled Condition="'$(SeedOpenApiEnabled)' == '' AND '$(OutputType)' == 'Exe'">true</SeedOpenApiEnabled>
+    <!-- NormalizePath: Trennzeichen passend zum System, auch für Exec auf Linux-Agents. -->
+    <SeedOpenApiTool Condition="'$(SeedOpenApiTool)' == ''">$([MSBuild]::NormalizePath('$(MSBuildThisFileDirectory)', '..', 'tools', 'net10.0', 'Bfs.Seed.OpenApi.Export.dll'))</SeedOpenApiTool>
+  </PropertyGroup>
+
+  <!-- OutDir steht erst fest, wenn die Common-Targets ausgewertet sind; deshalb hier im Target. -->
+  <Target Name="_SeedOpenApiPaths">
+    <PropertyGroup>
+      <_SeedOpenApiFile>$(SeedOpenApiOutputPath)</_SeedOpenApiFile>
+      <_SeedOpenApiFile Condition="'$(_SeedOpenApiFile)' == ''">$(OutDir)openapi/openapi.json</_SeedOpenApiFile>
+      <_SeedOpenApiFile>$([MSBuild]::NormalizePath('$(MSBuildProjectDirectory)', '$(_SeedOpenApiFile)'))</_SeedOpenApiFile>
+      <_SeedOpenApiDotnet>$(DOTNET_HOST_PATH)</_SeedOpenApiDotnet>
+      <_SeedOpenApiDotnet Condition="'$(_SeedOpenApiDotnet)' == ''">dotnet</_SeedOpenApiDotnet>
+    </PropertyGroup>
+
+    <!-- Neu erzeugen, wenn sich App, Werkzeug, host.json (Routen-Präfix), XML-Doku oder Abhängigkeiten ändern. -->
+    <ItemGroup>
+      <_SeedOpenApiInput Include="$(TargetPath);$(SeedOpenApiTool)" />
+      <_SeedOpenApiInput Include="$(OutDir)host.json" Condition="Exists('$(OutDir)host.json')" />
+      <_SeedOpenApiInput Include="$(OutDir)$(TargetName).xml" Condition="Exists('$(OutDir)$(TargetName).xml')" />
+      <_SeedOpenApiInput Include="$(ProjectDepsFilePath)" Condition="'$(ProjectDepsFilePath)' != '' AND Exists('$(ProjectDepsFilePath)')" />
+    </ItemGroup>
+  </Target>
+
+  <Target Name="SeedOpenApiExport"
+          AfterTargets="Build"
+          DependsOnTargets="_SeedOpenApiPaths"
+          Condition="'$(SeedOpenApiEnabled)' == 'true' AND '$(DesignTimeBuild)' != 'true'"
+          Inputs="@(_SeedOpenApiInput)"
+          Outputs="$(_SeedOpenApiFile)">
+    <Error Condition="!Exists('$(SeedOpenApiTool)')" Code="SEEDOPENAPI199" Text="openapi.json nicht erzeugt: Werkzeug $(SeedOpenApiTool) fehlt." />
+
+    <!--
+      Warnungen und Fehler schreibt das Werkzeug im kanonischen Format (SEEDOPENAPI…), Exec gibt sie
+      an MSBuild weiter. Exit-Code 1 heißt: Fehler gemeldet. Den Code werten wir selbst aus, damit
+      MSB3073 die Meldung nicht doppelt; jeder andere Code heißt, dass dotnet selbst gescheitert ist.
+    -->
+    <Exec Command="&quot;$(_SeedOpenApiDotnet)&quot; &quot;$(SeedOpenApiTool)&quot; &quot;$(TargetPath)&quot; &quot;$(_SeedOpenApiFile)&quot;"
+          StandardOutputImportance="low"
+          StandardErrorImportance="high"
+          IgnoreExitCode="true">
+      <Output TaskParameter="ExitCode" PropertyName="_SeedOpenApiExitCode" />
+    </Exec>
+    <Error Condition="'$(_SeedOpenApiExitCode)' != '0' AND '$(_SeedOpenApiExitCode)' != '1'"
+           Code="SEEDOPENAPI199"
+           Text="openapi.json nicht erzeugt: dotnet endete mit Code $(_SeedOpenApiExitCode). Das Werkzeug braucht .NET und ASP.NET Core 10 oder neuer; abschalten mit SeedOpenApiEnabled=false." />
+    <Message Condition="'$(_SeedOpenApiExitCode)' == '0'" Importance="high" Text="$(MSBuildProjectName) -> $(_SeedOpenApiFile)" />
+  </Target>
+
+  <Target Name="SeedOpenApiPublish"
+          AfterTargets="Publish"
+          DependsOnTargets="_SeedOpenApiPaths;SeedOpenApiExport"
+          Condition="'$(SeedOpenApiEnabled)' == 'true' AND '$(SeedOpenApiPublishDir)' != ''">
+    <Copy SourceFiles="$(_SeedOpenApiFile)" DestinationFolder="$(SeedOpenApiPublishDir)">
+      <Output TaskParameter="CopiedFiles" ItemName="_SeedOpenApiPublished" />
+    </Copy>
+    <Message Importance="high" Text="$(MSBuildProjectName) -> @(_SeedOpenApiPublished->'%(FullPath)')" />
+  </Target>
+
+  <Target Name="_SeedOpenApiClean" AfterTargets="Clean" DependsOnTargets="_SeedOpenApiPaths" Condition="'$(SeedOpenApiEnabled)' == 'true'">
+    <Delete Files="$(_SeedOpenApiFile)" />
+  </Target>
+
+</Project>

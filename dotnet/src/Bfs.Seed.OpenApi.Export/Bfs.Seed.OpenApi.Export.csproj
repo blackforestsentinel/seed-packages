@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Werkzeug für den Build der App (build/Bfs.Seed.OpenApi.targets). Kein eigenes Paket:
+    Bfs.Seed.OpenApi legt die Ausgabe samt runtimeconfig und deps unter tools/net10.0 ins Paket.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <!-- Aufruf über dotnet <dll>; eine native Startdatei braucht es nicht. -->
+    <UseAppHost>false</UseAppHost>
+    <!-- Läuft auch, wenn auf dem Build-Agent nur eine neuere .NET-Version installiert ist. -->
+    <RollForward>Major</RollForward>
+  </PropertyGroup>
+
+  <!-- Die App braucht zum Laden ASP.NET Core; das Shared Framework kommt über die runtimeconfig dieses Werkzeugs. -->
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Bfs.Seed.OpenApi.Tests" />
+  </ItemGroup>
+
+</Project>

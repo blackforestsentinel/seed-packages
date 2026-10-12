@@ -1,0 +1,9 @@
+{
+  // Kommentare erlaubt wie in host.json einer Function-App.
+  "version": "2.0",
+  "extensions": {
+    "http": {
+      "routePrefix": "v1",
+    }
+  }
+}

@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="xunit.v3" Version="4.0.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Bfs.Seed.OpenApi\Bfs.Seed.OpenApi.csproj" />
+    <ProjectReference Include="..\..\src\Bfs.Seed.OpenApi.Export\Bfs.Seed.OpenApi.Export.csproj" />
+    <ProjectReference Include="..\Bfs.Seed.OpenApi.TestApp\Bfs.Seed.OpenApi.TestApp.csproj" />
+  </ItemGroup>
+
+  <!-- Routen-Präfix für die Export-Tests; liegt neben der App-Assembly wie in einer Function-App. -->
+  <ItemGroup>
+    <None Update="host.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

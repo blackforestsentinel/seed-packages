@@ -70,8 +70,9 @@ public class GeneratorTests
             ["SEEDOPENAPI003", "SEEDOPENAPI004", "SEEDOPENAPI007", "SEEDOPENAPI008", "SEEDOPENAPI009", "SEEDOPENAPI012"],
             result.Codes().Distinct().Order(StringComparer.Ordinal));
 
-        // Objekt als Query-Parameter: string. Polymorphie (anyOf): erster Zweig.
+        // Objekt als Query-Parameter: string, ohne eigene Definition. Polymorphie (anyOf): erster Zweig.
         Assert.Equal("""{"name":"filter","in":"query","required":false,"type":"string"}""", operation.Parameter("filter").ToJsonString());
+        Assert.Equal(["Shape", "Square"], result.Document["definitions"]!.AsObject().Select(d => d.Key));
         Assert.DoesNotContain("anyOf", result.ToJson(), StringComparison.Ordinal);
         Assert.Equal("object", result.Definition("Shape").Text("type"));
         Assert.Empty(SwaggerValidator.Validate(result.Document));

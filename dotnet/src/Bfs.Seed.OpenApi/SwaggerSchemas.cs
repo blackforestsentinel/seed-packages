@@ -52,7 +52,9 @@ internal sealed class SwaggerSchemas(JsonSerializerOptions serializerOptions, Li
     /// <summary>Typ und Format für Pfad- und Query-Parameter, die in Swagger 2.0 kein Schema haben.</summary>
     public JsonObject ParameterType(Type type, string where)
     {
-        var schema = Export(Nullable.GetUnderlyingType(type) ?? type);
+        // Objekte und Listen gar nicht erst exportieren: Ihre Definitionen würden sonst ungenutzt im Dokument landen.
+        var underlying = Nullable.GetUnderlyingType(type) ?? type;
+        var schema = serializerOptions.GetTypeInfo(underlying).Kind == JsonTypeInfoKind.None ? Export(underlying) : new JsonObject();
         var result = new JsonObject();
         var kind = schema["type"]?.GetValue<string>();
         if (kind is null or "object" or "array")

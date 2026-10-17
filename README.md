@@ -12,6 +12,7 @@ Code-Bausteine für Projekte aus dem [Sentinel-Seed-Template](https://github.com
 | [`Bfs.Seed.Mcp`](dotnet/src/Bfs.Seed.Mcp) | nuget.org | `AddSeedMcp()`: MCP-Server unter `/api/mcp` mit Metadaten nach RFC 9728, Werkzeuge per Attribut, Capabilities je Werkzeug |
 | [`Bfs.Seed.Storage`](dotnet/src/Bfs.Seed.Storage) | nuget.org | `AddSeedStorage()`: Clients für Table, Blob und Queue (Managed Identity, lokal Azurite), Table-Repository mit ETag, Partition je `oid`/`tid`, Queue-Nachrichten passend zum Trigger |
 | [`Bfs.Seed.OpenApi`](dotnet/src/Bfs.Seed.OpenApi) | nuget.org | openapi.json (Swagger 2.0) beim Build aus Attributen an den HTTP-Functions, ohne Functions-Host; Grundlage für den Custom Connector der Power Platform |
+| [`Bfs.Seed.Extension`](dotnet/src/Bfs.Seed.Extension) | nuget.org | `AddSeedExtensionUpdates()`: Update-Endpunkt einer selbst gehosteten Browser-Erweiterung (`/api/extension/updates.xml`, signierte CRX aus dem Container `extension`), für die Verteilung per Intune |
 
 `Bfs.Seed.OpenApi` wirkt beim Build: Das Paket bringt neben der Bibliothek ein Export-Werkzeug (`tools/`) und ein MSBuild-Target (`build/`) mit. Das Werkzeug ist kein eigenes Paket; sein Projekt `Bfs.Seed.OpenApi.Export` ist nicht packbar.
 

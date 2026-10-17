@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/Bfs.Seed.Auth/Bfs.Seed.Auth.csproj" />
+    <Project Path="src/Bfs.Seed.Extension/Bfs.Seed.Extension.csproj" />
     <Project Path="src/Bfs.Seed.Functions.Core/Bfs.Seed.Functions.Core.csproj" />
     <Project Path="src/Bfs.Seed.Mcp/Bfs.Seed.Mcp.csproj" />
     <Project Path="src/Bfs.Seed.OpenApi/Bfs.Seed.OpenApi.csproj" />
@@ -9,6 +10,7 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Bfs.Seed.Auth.Tests/Bfs.Seed.Auth.Tests.csproj" />
+    <Project Path="tests/Bfs.Seed.Extension.Tests/Bfs.Seed.Extension.Tests.csproj" />
     <Project Path="tests/Bfs.Seed.Functions.Core.Tests/Bfs.Seed.Functions.Core.Tests.csproj" />
     <Project Path="tests/Bfs.Seed.Mcp.Tests/Bfs.Seed.Mcp.Tests.csproj" />
     <Project Path="tests/Bfs.Seed.OpenApi.TestApp/Bfs.Seed.OpenApi.TestApp.csproj" />

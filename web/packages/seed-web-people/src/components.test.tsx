@@ -4,6 +4,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import type { ReactNode } from 'react';
 import { SeedUserProvider, type SeedUser } from '@blackforestsentinel/seed-web-auth/react';
 import type { SeedAuthConfig, SeedLocalAuthConfig } from '@blackforestsentinel/seed-web-auth';
+import { createSeedExtensionAuth } from '@blackforestsentinel/seed-web-auth/extension';
 import {
   AccessDenied,
   Avatar,
@@ -411,6 +412,48 @@ describe('CurrentUserMenu', () => {
       </SeedUserProvider>,
     );
     expect(container.textContent).toBe('');
+  });
+
+  it('läuft mit der Anmeldung für Browser-Erweiterungen (seed-web-auth/extension)', async () => {
+    // Angemeldet war die Person schon: Konto in chrome.storage.local, Graph-Token in der Sitzung.
+    const scopeKey = [...directoryConfig.scopes].sort().join(' ');
+    const areas = {
+      local: new Map<string, unknown>([['seed-auth.spa-id.account', { ...fakeAuth().account, homeAccountId: 'home-ext' }]]),
+      session: new Map<string, unknown>([
+        ['seed-auth.spa-id.tokens', { refreshToken: 'rt', accessTokens: { [scopeKey]: { token: 'graph-token', expiresOn: Date.now() + 3_600_000 } } }],
+      ]),
+    };
+    const area = (data: Map<string, unknown>) => ({
+      get: async (keys: string | string[]) => Object.fromEntries([keys].flat().filter((k) => data.has(k)).map((k) => [k, data.get(k)])),
+      set: async (items: Record<string, unknown>) => void Object.entries(items).forEach(([k, v]) => data.set(k, v)),
+      remove: async (keys: string | string[]) => void [keys].flat().forEach((k) => data.delete(k)),
+    });
+    const launchWebAuthFlow = vi.fn(async () => undefined);
+    const auth = await createSeedExtensionAuth(graphConfig, {
+      browser: {
+        identity: { getRedirectURL: () => 'https://abcdefghijklmnopabcdefghijklmnop.chromiumapp.org/', launchWebAuthFlow },
+        storage: { local: area(areas.local), session: area(areas.session) },
+      },
+      fetch: async () => {
+        throw new Error('Kein Token-Endpunkt nötig');
+      },
+    });
+    const graph = createFakeGraph({ photos: [people.erika.id] });
+    render(
+      <SeedUserProvider load={() => new Promise<SeedUser>(() => {})}>
+        <DirectoryProvider config={graphConfig} auth={auth} fetch={graph.fetch}>
+          <CurrentUserMenu />
+        </DirectoryProvider>
+      </SeedUserProvider>,
+    );
+
+    expect(screen.getByText('Erika Mustermann')).toBeTruthy();
+    await waitFor(() => expect(document.querySelector('.seed-avatar img')).toBeTruthy());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Abmelden' }));
+    await waitFor(() => expect(auth.account).toBeNull());
+    expect(areas.local.size + areas.session.size).toBe(0);
+    expect(launchWebAuthFlow).not.toHaveBeenCalled();
   });
 
   it('bedient das Menü mit der Tastatur', async () => {

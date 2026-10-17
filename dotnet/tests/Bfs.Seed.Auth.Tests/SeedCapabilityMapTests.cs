@@ -59,6 +59,31 @@ public class SeedCapabilityMapTests
         Assert.False(map.AllowsApplication([]));
     }
 
+    internal const string AudienceYaml = """
+        auth:
+          roles:
+            Admin:
+              capabilities: [settings.manage]
+            Team.Vertrieb:
+              displayName: Team Vertrieb
+              description: Zielgruppe ohne Rechte
+              capabilities: []
+            Team.Einkauf:
+              displayName: Team Einkauf
+        """;
+
+    [Fact]
+    public void Parse_RolesWithoutCapabilities_AreAudiencesOnly()
+    {
+        var map = SeedCapabilityMap.Parse(AudienceYaml);
+
+        Assert.Equal(["Admin", "Team.Einkauf", "Team.Vertrieb"], map.Roles.Keys.Order());
+        Assert.Empty(map.Roles["Team.Vertrieb"].Capabilities);
+        Assert.Empty(map.Roles["Team.Einkauf"].Capabilities);
+        Assert.Equal(["settings.manage"], map.Capabilities);
+        Assert.Empty(map.Resolve(["Team.Vertrieb", "Team.Einkauf"], SeedMemberTypes.User));
+    }
+
     [Fact]
     public void RoleDefinition_WithoutDisplayName_UsesName()
     {

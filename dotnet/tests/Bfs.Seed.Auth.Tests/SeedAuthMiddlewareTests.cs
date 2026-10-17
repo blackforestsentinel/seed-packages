@@ -147,6 +147,24 @@ public class SeedAuthMiddlewareTests
     }
 
     [Fact]
+    public async Task RoleWithoutCapabilities_IsReadableAsAudience()
+    {
+        var map = SeedCapabilityMap.Parse(SeedCapabilityMapTests.AudienceYaml);
+
+        var (status, called, http) = await InvokeAsync(nameof(CapabilityFunctions.Me), tokens.CreateToken(roles: ["Team.Vertrieb"]), map: map);
+        var info = SeedUserInfo.From(http.User);
+
+        Assert.Equal((200, true), (status, called));
+        Assert.True(http.User.IsInRole("Team.Vertrieb"));
+        Assert.False(http.User.IsInRole("Team.Einkauf"));
+        Assert.Equal(["Team.Vertrieb"], http.User.GetRoles());
+        Assert.Empty(http.User.GetCapabilities());
+        Assert.Equal(["Team.Vertrieb"], info.Roles);
+        Assert.Equal([new SeedRoleDetail("Team.Vertrieb", "Team Vertrieb")], info.RoleDetails);
+        Assert.Empty(info.Capabilities);
+    }
+
+    [Fact]
     public void Inspect_CombinesClassAndMethodAttributes()
     {
         var requirements = SeedAuthMiddleware.Inspect($"{typeof(ScopedFunctions).FullName}.{nameof(ScopedFunctions.Special)}");
@@ -157,7 +175,7 @@ public class SeedAuthMiddlewareTests
     }
 
     private async Task<(int Status, bool Called, HttpContext Http)> InvokeAsync(
-        string method, string? token, Type? type = null, ISeedAuthChallengeScope? challenge = null)
+        string method, string? token, Type? type = null, ISeedAuthChallengeScope? challenge = null, SeedCapabilityMap? map = null)
     {
         var http = new DefaultHttpContext();
         http.Request.Host = new HostString("api.example.org");
@@ -167,9 +185,9 @@ public class SeedAuthMiddlewareTests
         }
 
         var middleware = new SeedAuthMiddleware(
-            tokens.CreateValidator(Map),
+            tokens.CreateValidator(map ?? Map),
             Options.Create(tokens.AuthOptions),
-            Map,
+            map ?? Map,
             NullLogger<SeedAuthMiddleware>.Instance,
             challenge is null ? null : [challenge]);
 

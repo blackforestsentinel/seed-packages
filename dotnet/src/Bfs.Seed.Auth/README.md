@@ -37,6 +37,7 @@ auth:
 - Terraform legt aus derselben Datei die App-Rollen an der API-Registrierung an. Personen und Gruppen weist ein Admin in Entra den Rollen zu.
 - Nach der Token-Prüfung löst die Middleware die Rollen aus dem `roles`-Claim in Capabilities auf und hängt sie als Claims `SeedClaimTypes.Capability` an `HttpContext.User`. Es zählen nur Rollen, deren `memberTypes` zum Aufrufer passen.
 - `[RequireCapability("invoices.write")]` an Methode oder Klasse verlangt eine Capability; mehrere Attribute müssen alle erfüllt sein. `User.HasCapability(...)`, `GetCapabilities()`, `GetRoles()` und `GetRoleDetails()` helfen im Code.
+- Eine Rolle darf ohne Capabilities sein (`capabilities: []` oder ohne den Schlüssel), etwa als Zielgruppe, die nur festlegt, welche Inhalte jemand sieht. Abfragen lässt sie sich mit `User.IsInRole("Team.Vertrieb")` oder `GetRoles()`; das Frontend sieht sie in `roles` von `GET /api/me`. Gruppen den Rollen zuzuweisen setzt in Entra ID P1 voraus.
 - `SeedUserInfo.From(User)` liefert Name, Benutzername, `oid`, `tid`, Rollen, Rollen mit Anzeigenamen und Capabilities, die Antwort für `GET /api/me`. Das Frontend blendet damit UI-Elemente ein oder aus, ohne die Zuordnung zu kennen. Den Endpunkt legt das Projekt selbst an (im Template `Me/MeFunction.cs`), damit er nicht mit vorhandenen Functions kollidiert und erweiterbar bleibt.
 
 ### Anzeigenamen der Rollen

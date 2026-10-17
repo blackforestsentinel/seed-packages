@@ -1,7 +1,7 @@
 {
   "name": "@blackforestsentinel/seed-web-auth",
   "version": "0.0.0-dev",
-  "description": "Anmeldung per MSAL für Frontends in Sentinel-Seed-Projekten: Login mit stiller Erneuerung, Access-Tokens für die Function-API und Capabilities der angemeldeten Person für das UI.",
+  "description": "Anmeldung per MSAL für Frontends in Sentinel-Seed-Projekten: Login mit stiller Erneuerung, Access-Tokens für die Function-API und Capabilities der angemeldeten Person für das UI; dazu ein Einstieg für Browser-Erweiterungen.",
   "license": "MIT",
   "author": "Black Forest Sentinel",
   "type": "module",
@@ -18,6 +18,10 @@
     "./bridge": {
       "types": "./dist/bridge.d.ts",
       "import": "./dist/bridge.js"
+    },
+    "./extension": {
+      "types": "./dist/extension.d.ts",
+      "import": "./dist/extension.js"
     }
   },
   "files": [
@@ -33,7 +37,8 @@
     "sentinel-seed",
     "msal",
     "entra-id",
-    "react"
+    "react",
+    "browser-extension"
   ],
   "publishConfig": {
     "access": "public",

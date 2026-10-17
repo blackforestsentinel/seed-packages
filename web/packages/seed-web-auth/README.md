@@ -18,6 +18,7 @@ if (isSeedAuthConfig(config.auth)) {
 - `getAccessToken()` holt Tokens still und leitet nur um, wenn Entra ID eine Interaktion verlangt. Dann wirft es `SeedAuthRedirectError`.
 - `getAccessToken(scopes)` holt ein Token für genau diese Berechtigungen, etwa für Microsoft Graph (unten).
 - Redirect-Ziel ist der Origin der Seite mit abschließendem Schrägstrich (`https://app.example.org/`). Das Terraform-Modul `sso` trägt genau diese Form für die Static Web App und in `dev` für `http://localhost:5173/` ein.
+- Browser-Erweiterungen nutzen statt `createSeedAuth()` den Einstieg `/extension` mit demselben Interface (unten, „Browser-Erweiterungen“).
 
 ## Stille Sitzungserneuerung
 
@@ -74,6 +75,48 @@ const token = await auth.getAccessToken(['https://graph.microsoft.com/User.ReadB
 ```
 
 Im lokalen Modus gibt es keinen Graph-Zugriff; `auth.directory.people` enthält dort erfundene Personen (Typ `SeedLocalDirectoryConfig`).
+
+## Browser-Erweiterungen
+
+Eine Erweiterung (Edge, Chrome, Manifest V3) läuft unter `chrome-extension://<id>` statt auf einer Web-Origin. Umleitung der ganzen Seite, Token-Cache je Tab und Bridge-Seite passen dort nicht. Dafür gibt es den Einstieg `/extension`: `createSeedExtensionAuth()` liefert dasselbe Interface `SeedAuth` wie `createSeedAuth()`, damit laufen `createHttpClient`, `SeedUserProvider` und die Komponenten aus `@blackforestsentinel/seed-web-people` unverändert. Er meldet per Autorisierungscode mit PKCE über `chrome.identity.launchWebAuthFlow` an und lädt MSAL nicht (rund 3 KB gzip im Bundle).
+
+```ts
+import { createHttpClient, loadRuntimeConfig } from '@blackforestsentinel/seed-web-core';
+import { createSeedExtensionAuth, isSeedAuthConfig, SeedAuthInteractionRequiredError } from '@blackforestsentinel/seed-web-auth/extension';
+
+const config = await loadRuntimeConfig<{ apiBaseUrl: string; auth?: unknown }>({ url: chrome.runtime.getURL('config.json') });
+if (isSeedAuthConfig(config.auth)) {
+  const auth = await createSeedExtensionAuth(config.auth, { domainHint: 'example.org' });
+  const api = createHttpClient({ baseUrl: config.apiBaseUrl, getAccessToken: auth.getAccessToken });
+  try {
+    render(await api.get('/api/items'));
+  } catch (error) {
+    if (error instanceof SeedAuthInteractionRequiredError) {
+      // „Anmeldung erneuern“ anzeigen und erst nach dem Klick auth.login() aufrufen.
+    }
+  }
+}
+```
+
+`getAccessToken(scopes?)` geht diese Stufen durch und nimmt die nächste nur, wenn die vorige scheitert:
+
+1. Access-Token aus dem Speicher oder per Refresh-Token.
+2. `launchWebAuthFlow` ohne Fenster (`interactive: false`) mit `prompt=none` und dem Benutzernamen als `login_hint`. Das nutzt die Sitzung bei Entra ID im Browser-Profil, etwa nach den 24 Stunden, die ein Refresh-Token einer SPA gilt, oder nach einem Browser-Neustart.
+3. Kein Fenster: `SeedAuthInteractionRequiredError`. Für zusätzliche Berechtigungen (etwa Graph) gilt wie im Web `SeedAuthScopeError`, wenn nur die Einwilligung fehlt.
+
+- Nur `login()` öffnet ein Fenster, mit `domain_hint` und, falls bekannt, `login_hint`. Die App ruft es nur nach einem Klick auf. Nirgends leitet der Einstieg die Seite um.
+- `account` kommt beim Start sofort aus `chrome.storage.local`, ohne Netz und ohne Token; der neue Tab kann also gleich den Namen zeigen. Dort liegt auch der Benutzername für `login_hint`, damit der Service Worker ihn kennt.
+- Die Tokens gelten für alle Seiten und den Service Worker der Erweiterung gemeinsam. `tokenStorage: 'session'` (Default) legt sie in `chrome.storage.session`: nur im Speicher, nach einem Neustart meldet Stufe 2 still neu an. `tokenStorage: 'local'` legt sie in `chrome.storage.local`, wo sie Neustarts überdauern, solange das Refresh-Token gilt.
+- Parallele Aufrufe teilen sich eine Erneuerung, auch über Tabs hinweg (`navigator.locks`).
+- Scheitert Stufe 2, versucht der Einstieg sie für denselben Scope-Satz in dieser Browser-Sitzung nicht noch einmal, sondern wirft sofort; `login()` setzt das zurück. Netzwerk- und Serverfehler des Token-Endpunkts lösen Stufe 2 nicht aus, sondern gehen weiter.
+- `logout()` löscht Tokens, Konto und Merker. Die Sitzung bei Entra ID gehört dem Browser-Profil und bleibt.
+- `redirectBridgePath` aus der Konfiguration gilt hier nicht; sonst ist sie dieselbe wie im Web, auch `directory` für Graph.
+
+Einrichtung:
+
+- `manifest.json` braucht `"permissions": ["identity", "storage"]`. `host_permissions` für Entra ID oder die API sind nicht nötig. Mit `key` im Manifest behält eine entpackte Erweiterung ihre ID; die Store-Version bekommt ihre ID vom Store.
+- Die Redirect-URI ist `chrome.identity.getRedirectURL()`, also `https://<erweiterungs-id>.chromiumapp.org/`. Sie gehört an die SPA-Registrierung, damit der Token-Endpunkt die Einlösung mit `Origin: chrome-extension://<id>` annimmt; im Template je Umgebung über `auth.extraRedirectUris` in `project.yaml`. Die API muss die Origin `chrome-extension://<id>` per CORS zulassen (`hosting.corsAllowedOrigins`). Beides beschreibt die README von seed-template, Abschnitt „Browser-Erweiterungen“.
+- `config.json` liegt im Paket der Erweiterung; die Pipeline aus seed-pipelines schreibt sie je Umgebung (Parameter `extension`).
 
 ## Capabilities im UI
 

@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Description>Update-Endpunkt für selbst gehostete Browser-Erweiterungen (Edge, Chrome) in Sentinel-Seed-Projekten: updates.xml im gupdate-Format und signierte CRX-Pakete aus dem Container extension, wie die Seed-Pipeline sie veröffentlicht.</Description>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <PackageTags>$(PackageTags);browser-extension;edge;crx;intune</PackageTags>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="Microsoft.Azure.Functions.Worker" Version="2.51.0" />
+    <PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.Http.AspNetCore" Version="2.1.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Bfs.Seed.Storage\Bfs.Seed.Storage.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Bfs.Seed.Extension.Tests" />
+  </ItemGroup>
+
+</Project>

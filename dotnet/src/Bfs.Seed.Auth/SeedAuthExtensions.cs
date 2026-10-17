@@ -63,6 +63,13 @@ internal sealed record SeedAuthAssemblies(IReadOnlyList<Assembly> Assemblies);
 internal sealed class SeedAuthOptionsValidation(IConfiguration configuration, IServiceProvider services)
     : IValidateOptions<SeedAuthOptions>
 {
+    // Variablen, die nur die Azure-Plattform setzt. Jeder Hosting-Plan setzt nur einen Teil davon:
+    // WEBSITE_INSTANCE_ID fehlt etwa auf Linux Consumption und Flex Consumption, dort gibt es
+    // WEBSITE_SITE_NAME, WEBSITE_SKU und CONTAINER_NAME bzw. WEBSITE_POD_NAME. Container Apps setzt
+    // CONTAINER_APP_NAME. Die Core Tools (func start) setzen keine davon.
+    internal static readonly string[] AzureHostingVariables =
+        ["WEBSITE_INSTANCE_ID", "WEBSITE_SITE_NAME", "WEBSITE_SKU", "WEBSITE_POD_NAME", "CONTAINER_NAME", "CONTAINER_APP_NAME"];
+
     public ValidateOptionsResult Validate(string? name, SeedAuthOptions options)
     {
         var failures = new List<string>();
@@ -73,10 +80,11 @@ internal sealed class SeedAuthOptionsValidation(IConfiguration configuration, IS
             failures.Add("UseSeedAuth(): Auth:TenantId und Auth:ClientId fehlen. Ist das Feature sso in project.yaml aktiv?");
         }
 
-        // In Azure setzt die Plattform WEBSITE_INSTANCE_ID; dort darf es keinen Nutzer ohne Token geben.
-        if (options.Mode == SeedAuthMode.Local && !string.IsNullOrEmpty(configuration["WEBSITE_INSTANCE_ID"]))
+        // In Azure darf es keinen Nutzer ohne Token geben.
+        if (options.Mode == SeedAuthMode.Local
+            && AzureHostingVariables.FirstOrDefault(v => !string.IsNullOrEmpty(configuration[v])) is { } variable)
         {
-            failures.Add("UseSeedAuth(): Auth:Mode=Local ist nur lokal erlaubt, die App läuft aber in Azure (WEBSITE_INSTANCE_ID ist gesetzt).");
+            failures.Add($"UseSeedAuth(): Auth:Mode=Local ist nur lokal erlaubt, die App läuft aber in Azure ({variable} ist gesetzt).");
         }
 
         SeedCapabilityMap map;

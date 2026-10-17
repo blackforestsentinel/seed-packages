@@ -67,17 +67,38 @@ public sealed class SeedAuthExtensionsTests : IDisposable
         Assert.Equal(["invoices.read", "invoices.write"], user.GetCapabilities().Order());
     }
 
-    [Fact]
-    public void LocalMode_InAzure_DoesNotStart()
+    [Theory]
+    [InlineData("WEBSITE_INSTANCE_ID", "abc123")]           // App Service, Windows Consumption
+    [InlineData("WEBSITE_SITE_NAME", "func-demo-dev")]      // alle Pläne, auch Flex Consumption
+    [InlineData("WEBSITE_SKU", "FlexConsumption")]
+    [InlineData("WEBSITE_POD_NAME", "func-demo-dev-7f9c")]
+    [InlineData("CONTAINER_NAME", "func-demo-dev_1a2b")]    // Linux Consumption
+    [InlineData("CONTAINER_APP_NAME", "ca-demo-dev")]       // Container Apps
+    public void LocalMode_InAzure_DoesNotStart(string variable, string value)
     {
         var error = Assert.Throws<OptionsValidationException>(() => Resolve(new()
         {
             ["Auth:Mode"] = "Local",
             ["Auth:ProjectFile"] = projectFile,
-            ["WEBSITE_INSTANCE_ID"] = "abc123",
+            [variable] = value,
         }));
 
-        Assert.Contains("nur lokal erlaubt", error.Message);
+        Assert.Contains($"nur lokal erlaubt, die App läuft aber in Azure ({variable} ist gesetzt)", error.Message);
+    }
+
+    [Fact]
+    public void LocalMode_WithCoreToolsVariables_Starts()
+    {
+        // Die Core Tools setzen beim lokalen Start WEBSITE_HOSTNAME und AZURE_FUNCTIONS_ENVIRONMENT.
+        using var provider = Build(new()
+        {
+            ["Auth:Mode"] = "Local",
+            ["Auth:ProjectFile"] = projectFile,
+            ["WEBSITE_HOSTNAME"] = "localhost:7071",
+            ["AZURE_FUNCTIONS_ENVIRONMENT"] = "Development",
+        });
+
+        Assert.Equal(SeedAuthMode.Local, provider.GetRequiredService<IOptions<SeedAuthOptions>>().Value.Mode);
     }
 
     [Fact]

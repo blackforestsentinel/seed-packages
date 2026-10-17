@@ -7,8 +7,9 @@ public enum SeedAuthMode
     Entra,
 
     /// <summary>
-    /// Fester Entwicklungsnutzer ohne Token, nur lokal. Läuft die App in Azure
-    /// (<c>WEBSITE_INSTANCE_ID</c> gesetzt), startet sie in diesem Modus nicht.
+    /// Fester Entwicklungsnutzer ohne Token, nur lokal. Läuft die App in Azure (eine der
+    /// Plattform-Variablen wie <c>WEBSITE_SITE_NAME</c> oder <c>WEBSITE_INSTANCE_ID</c> gesetzt),
+    /// startet sie in diesem Modus nicht.
     /// </summary>
     Local,
 }

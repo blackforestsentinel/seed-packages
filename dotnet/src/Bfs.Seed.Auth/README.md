@@ -95,7 +95,7 @@ Mit `Auth:Mode = Local` gibt es keinen Token-Zwang: Jede Anfrage läuft als fest
 "Auth__LocalUser__Roles__0": "Admin"
 ```
 
-Weitere Einstellungen: `Auth__LocalUser__Name`, `__Username`, `__ObjectId`, `__TenantId`. Läuft die App in Azure (`WEBSITE_INSTANCE_ID` gesetzt), startet sie in diesem Modus nicht; ebenso nicht, wenn eine lokale Rolle in `auth.roles` fehlt. Im Frontend schaltet `config.json` mit `"auth": { "mode": "local" }` MSAL ab.
+Weitere Einstellungen: `Auth__LocalUser__Name`, `__Username`, `__ObjectId`, `__TenantId`. Läuft die App in Azure, startet sie in diesem Modus nicht. Das erkennt sie an Variablen, die nur die Plattform setzt: `WEBSITE_INSTANCE_ID`, `WEBSITE_SITE_NAME`, `WEBSITE_SKU`, `WEBSITE_POD_NAME`, `CONTAINER_NAME` oder `CONTAINER_APP_NAME`. Jeder Hosting-Plan setzt nur einen Teil davon, Flex Consumption etwa kein `WEBSITE_INSTANCE_ID`. Ebenso startet die App nicht, wenn eine lokale Rolle in `auth.roles` fehlt. Im Frontend schaltet `config.json` mit `"auth": { "mode": "local" }` MSAL ab.
 
 ## MCP und Protected Resource Metadata
 

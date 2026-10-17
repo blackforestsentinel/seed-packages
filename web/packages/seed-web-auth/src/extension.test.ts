@@ -180,6 +180,7 @@ function setup() {
     entra,
     tokenCalls,
     launchWebAuthFlow,
+    fetch: fetchFn,
     local: local.data,
     get session() {
       return session.data;
@@ -434,6 +435,46 @@ describe('createSeedExtensionAuth', () => {
 
     await expect(auth.login()).rejects.toThrow(/nonce/);
     expect(auth.account).toBeNull();
+  });
+
+  it('schreibt nach dem Abmelden keine Tokens aus einer laufenden Erneuerung zurück', async () => {
+    const t = setup();
+    let release = () => {};
+    let reached = () => {};
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const atTokenEndpoint = new Promise<void>((resolve) => (reached = resolve));
+    const auth = await t.tab({
+      fetch: async (input, init) => {
+        if (new URLSearchParams(String(init?.body)).get('grant_type') === 'refresh_token') {
+          reached();
+          await gate;
+        }
+        return t.fetch(input, init);
+      },
+    });
+    await auth.login();
+    t.advance(hours(2));
+
+    // Die Erneuerung wartet am Token-Endpunkt, während die Person sich abmeldet.
+    const renewal = auth.getAccessToken();
+    await atTokenEndpoint;
+    const logout = auth.logout();
+    release();
+    await Promise.allSettled([renewal, logout]);
+
+    expect(auth.account).toBeNull();
+    expect([...t.local.keys(), ...t.session.keys()]).toEqual([]);
+  });
+
+  it('wertet eine leere Antwort des unsichtbaren Flusses als nötige Anmeldung', async () => {
+    const t = setup();
+    const auth = await t.tab();
+    await auth.login();
+    t.entra.refreshTokens.clear();
+    t.advance(hours(25));
+    t.launchWebAuthFlow.mockResolvedValueOnce(undefined);
+
+    await expect(auth.getAccessToken()).rejects.toBeInstanceOf(SeedAuthInteractionRequiredError);
   });
 
   it('meldet fehlende Berechtigungen identity und storage verständlich', async () => {

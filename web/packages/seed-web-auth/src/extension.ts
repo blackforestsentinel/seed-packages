@@ -292,6 +292,9 @@ export async function createSeedExtensionAuth(config: SeedAuthConfig, options: S
       throw new EntraError({ error: 'interaction_required', error_description: String((error as Error)?.message ?? error) }, 'Anmeldung ohne Fenster');
     }
 
+    if (!responseUrl) {
+      throw new EntraError({ error: 'interaction_required', error_description: 'launchWebAuthFlow ohne Antwort' }, 'Anmeldung');
+    }
     const result = parseRedirect(responseUrl);
     if (result.get('state') !== state) {
       throw new Error('Anmeldung: Antwort mit unbekanntem state.');
@@ -402,12 +405,16 @@ export async function createSeedExtensionAuth(config: SeedAuthConfig, options: S
       });
     },
     async logout() {
-      // Abmelden nur in der Erweiterung; die Sitzung bei Entra ID gehört dem Browser-Profil.
+      // Abmelden nur in der Erweiterung; die Sitzung bei Entra ID gehört dem Browser-Profil. Im
+      // Lock, damit eine laufende Erneuerung Konto und Tokens danach nicht wieder schreibt.
       account = null;
-      await Promise.all([
-        browser.storage.local.remove([accountKey, ...(tokenAreaName === 'local' ? [tokensKey] : [])]),
-        browser.storage.session.remove([blockedKey, ...(tokenAreaName === 'session' ? [tokensKey] : [])]),
-      ]);
+      await withLock(async () => {
+        account = null;
+        await Promise.all([
+          browser.storage.local.remove([accountKey, ...(tokenAreaName === 'local' ? [tokensKey] : [])]),
+          browser.storage.session.remove([blockedKey, ...(tokenAreaName === 'session' ? [tokensKey] : [])]),
+        ]);
+      });
     },
     getAccessToken(requested?: string[]) {
       // Auch als Callback ohne Argument nutzbar (createHttpClient); alles andere als eine Liste
@@ -434,10 +441,7 @@ function requestScopes(scopes: readonly string[]): string {
   return [...new Set([...scopes, 'openid', 'profile', 'offline_access'])].join(' ');
 }
 
-function parseRedirect(url: string | undefined): URLSearchParams {
-  if (!url) {
-    return new URLSearchParams({ error: 'interaction_required', error_description: 'launchWebAuthFlow ohne Antwort' });
-  }
+function parseRedirect(url: string): URLSearchParams {
   const parsed = new URL(url);
   return new URLSearchParams(parsed.hash.length > 1 ? parsed.hash.slice(1) : parsed.search);
 }

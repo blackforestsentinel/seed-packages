@@ -8,19 +8,19 @@ public class SeedExtensionTests
     [Fact]
     public void UpdateManifest_IsGupdateWithOneApp()
     {
-        var release = new SeedExtensionRelease("flpkgokniclbiocmpjpmficmfcdghfgd", "1.1.0.2190", "sentinel-link-1.1.0.2190.crx", "ABCDEF0123");
+        var release = new SeedExtensionRelease("ponmlkjihgfedcbaponmlkjihgfedcba", "1.1.0.2190", "lieferportal-1.1.0.2190.crx", "ABCDEF0123");
 
-        var xml = XDocument.Parse(SeedExtension.UpdateManifest(release, "https://api.example/api/extension/packages/sentinel-link-1.1.0.2190.crx"));
+        var xml = XDocument.Parse(SeedExtension.UpdateManifest(release, "https://api.example/api/extension/packages/lieferportal-1.1.0.2190.crx"));
 
         XNamespace ns = "http://www.google.com/update2/response";
         Assert.Equal(ns + "gupdate", xml.Root!.Name);
         Assert.Equal("2.0", xml.Root.Attribute("protocol")!.Value);
         var app = Assert.Single(xml.Root.Elements(ns + "app"));
-        Assert.Equal("flpkgokniclbiocmpjpmficmfcdghfgd", app.Attribute("appid")!.Value);
+        Assert.Equal("ponmlkjihgfedcbaponmlkjihgfedcba", app.Attribute("appid")!.Value);
         var check = app.Element(ns + "updatecheck")!;
         Assert.Equal("1.1.0.2190", check.Attribute("version")!.Value);
         Assert.Equal("abcdef0123", check.Attribute("hash_sha256")!.Value);
-        Assert.Equal("https://api.example/api/extension/packages/sentinel-link-1.1.0.2190.crx", check.Attribute("codebase")!.Value);
+        Assert.Equal("https://api.example/api/extension/packages/lieferportal-1.1.0.2190.crx", check.Attribute("codebase")!.Value);
     }
 
     [Theory]
@@ -37,28 +37,28 @@ public class SeedExtensionTests
     }
 
     [Theory]
-    [InlineData("sentinel-auth-1.0.0.2210.crx", true)]
-    [InlineData("sentinel-auth-1.crx", true)]
-    [InlineData("sentinel-auth-65535.65535.65535.65535.crx", true)]
-    [InlineData("sentinel-auth-1.0.0.0.0.crx", false)]
-    [InlineData("sentinel-auth-123456.crx", false)]
-    [InlineData("sentinel-auth-1.0.crx.json", false)]
-    [InlineData("sentinel-link-1.0.crx", false)]
-    [InlineData("SENTINEL-AUTH-1.0.crx", false)]
+    [InlineData("kundenportal-1.0.0.2210.crx", true)]
+    [InlineData("kundenportal-1.crx", true)]
+    [InlineData("kundenportal-65535.65535.65535.65535.crx", true)]
+    [InlineData("kundenportal-1.0.0.0.0.crx", false)]
+    [InlineData("kundenportal-123456.crx", false)]
+    [InlineData("kundenportal-1.0.crx.json", false)]
+    [InlineData("lieferportal-1.0.crx", false)]
+    [InlineData("KUNDENPORTAL-1.0.crx", false)]
     [InlineData("current.json", false)]
-    [InlineData("../sentinel-auth-1.0.crx", false)]
-    [InlineData("sentinel-auth-1.0.crx/../current.json", false)]
+    [InlineData("../kundenportal-1.0.crx", false)]
+    [InlineData("kundenportal-1.0.crx/../current.json", false)]
     [InlineData("", false)]
     [InlineData(null, false)]
     public void IsPackageFile_AcceptsOnlyNamesThePipelineGives(string? file, bool expected)
     {
-        Assert.Equal(expected, SeedExtension.IsPackageFile("sentinel-auth", file));
+        Assert.Equal(expected, SeedExtension.IsPackageFile("kundenportal", file));
     }
 
     [Theory]
-    [InlineData("sentinel-auth", true)]
+    [InlineData("kundenportal", true)]
     [InlineData("a", true)]
-    [InlineData("Sentinel-Auth", false)]
+    [InlineData("Kundenportal", false)]
     [InlineData("-x", false)]
     [InlineData("a.b", false)]
     [InlineData("", false)]

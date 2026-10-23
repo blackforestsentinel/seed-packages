@@ -24,7 +24,7 @@ builder.Build().Run();
 Die Seed-Pipeline (seed-pipelines, Parameter `extension` mit `signing`) signiert das Paket im Deploy der Umgebung als CRX3 und legt im Container `extension` des Projekt-Storage zuerst `<name>-<version>.crx` und danach `current.json` ab:
 
 ```json
-{ "id": "…", "version": "1.0.0.2210", "file": "sentinel-auth-1.0.0.2210.crx", "sha256": "…" }
+{ "id": "…", "version": "1.0.0.2210", "file": "kundenportal-1.0.0.2210.crx", "sha256": "…" }
 ```
 
 Weitere Felder der Datei werden ignoriert. Jede Instanz hält `current.json` eine Minute im Speicher; Browser fragen ohnehin nur alle paar Stunden.

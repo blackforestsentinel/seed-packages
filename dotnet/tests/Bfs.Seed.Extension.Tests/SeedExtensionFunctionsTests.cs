@@ -9,7 +9,7 @@ namespace Bfs.Seed.Extension.Tests;
 
 public class SeedExtensionFunctionsTests
 {
-    private static readonly SeedExtensionRelease Release = new("aaiejlkbnaaolchagdkohjfomnhglfac", "1.0.0.2210", "sentinel-auth-1.0.0.2210.crx", "00ff");
+    private static readonly SeedExtensionRelease Release = new("abcdefghijklmnopabcdefghijklmnop", "1.0.0.2210", "kundenportal-1.0.0.2210.crx", "00ff");
 
     [Fact]
     public async Task WithoutRegistration_BothAnswer404()
@@ -29,7 +29,7 @@ public class SeedExtensionFunctionsTests
         var result = Assert.IsType<ContentResult>(await functions.UpdatesAsync(request, TestContext.Current.CancellationToken));
 
         Assert.Equal("text/xml; charset=utf-8", result.ContentType);
-        Assert.Contains("codebase=\"https://func.example/api/extension/packages/sentinel-auth-1.0.0.2210.crx\"", result.Content);
+        Assert.Contains("codebase=\"https://func.example/api/extension/packages/kundenportal-1.0.0.2210.crx\"", result.Content);
         Assert.Equal("no-cache", request.HttpContext.Response.Headers.CacheControl.ToString());
     }
 
@@ -70,11 +70,11 @@ public class SeedExtensionFunctionsTests
     public void Register_TakesThePackageNameFromTheProject()
     {
         var services = new ServiceCollection();
-        SeedExtensionExtensions.Register(services, Configuration(storage: true, project: "sentinel-auth"));
+        SeedExtensionExtensions.Register(services, Configuration(storage: true, project: "kundenportal"));
 
         var options = services.BuildServiceProvider().GetRequiredService<IOptions<SeedExtensionOptions>>().Value;
 
-        Assert.Equal("sentinel-auth", options.PackageName);
+        Assert.Equal("kundenportal", options.PackageName);
         Assert.Equal("extension", options.ContainerName);
     }
 
@@ -82,7 +82,7 @@ public class SeedExtensionFunctionsTests
     public void Register_RejectsInvalidPackageNames()
     {
         var services = new ServiceCollection();
-        SeedExtensionExtensions.Register(services, Configuration(storage: true, project: "Sentinel Auth"));
+        SeedExtensionExtensions.Register(services, Configuration(storage: true, project: "Kunden Portal"));
 
         Assert.Throws<OptionsValidationException>(() => services.BuildServiceProvider().GetRequiredService<IOptions<SeedExtensionOptions>>().Value);
     }

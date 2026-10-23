@@ -11,7 +11,7 @@ namespace Bfs.Seed.Extension;
 /// </summary>
 /// <param name="Id">Erweiterungs-ID, folgt aus dem Signaturschlüssel.</param>
 /// <param name="Version">Version aus manifest.json, etwa 1.1.0.2190.</param>
-/// <param name="File">Name des CRX im Container, etwa sentinel-link-1.1.0.2190.crx.</param>
+/// <param name="File">Name des CRX im Container, etwa lieferportal-1.1.0.2190.crx.</param>
 /// <param name="Sha256">SHA-256 des CRX, hexadezimal; der Browser prüft damit den Download.</param>
 public sealed record SeedExtensionRelease(string Id, string Version, string File, string Sha256);
 

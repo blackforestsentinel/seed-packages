@@ -16,7 +16,7 @@ public class AzuriteTests
     private readonly SeedStorageClients clients;
     private readonly SeedExtensionOptions options = new()
     {
-        PackageName = "sentinel-auth",
+        PackageName = "kundenportal",
         ContainerName = $"ext-{Guid.NewGuid():N}",
     };
 
@@ -35,29 +35,29 @@ public class AzuriteTests
         Assert.Null(await releases.GetCurrentAsync(cancellationToken));
 
         // Die Pipeline schreibt weitere Felder; sie werden ignoriert.
-        await Upload(SeedExtension.CurrentFile, """{"id":"aaiejlkbnaaolchagdkohjfomnhglfac","version":"1.0.0.1","file":"sentinel-auth-1.0.0.1.crx","sha256":"ab","contentHash":"x","buildId":"1"}""");
+        await Upload(SeedExtension.CurrentFile, """{"id":"abcdefghijklmnopabcdefghijklmnop","version":"1.0.0.1","file":"kundenportal-1.0.0.1.crx","sha256":"ab","contentHash":"x","buildId":"1"}""");
         Assert.Null(await releases.GetCurrentAsync(cancellationToken));
 
         time.Advance(options.CacheDuration);
         var release = await releases.GetCurrentAsync(cancellationToken);
 
-        Assert.Equal(new SeedExtensionRelease("aaiejlkbnaaolchagdkohjfomnhglfac", "1.0.0.1", "sentinel-auth-1.0.0.1.crx", "ab"), release);
+        Assert.Equal(new SeedExtensionRelease("abcdefghijklmnopabcdefghijklmnop", "1.0.0.1", "kundenportal-1.0.0.1.crx", "ab"), release);
     }
 
     [Fact]
     public async Task Package_IsStreamed_OnlyForValidNames()
     {
         var releases = new SeedBlobExtensionReleases(clients, Options.Create(options), time);
-        await Upload("sentinel-auth-1.0.0.1.crx", "Cr24-package");
+        await Upload("kundenportal-1.0.0.1.crx", "Cr24-package");
         await Upload(SeedExtension.CurrentFile, "{}");
 
-        await using (var stream = await releases.OpenPackageAsync("sentinel-auth-1.0.0.1.crx", cancellationToken))
+        await using (var stream = await releases.OpenPackageAsync("kundenportal-1.0.0.1.crx", cancellationToken))
         {
             using var reader = new StreamReader(stream!);
             Assert.Equal("Cr24-package", await reader.ReadToEndAsync(cancellationToken));
         }
 
-        Assert.Null(await releases.OpenPackageAsync("sentinel-auth-1.0.0.2.crx", cancellationToken));
+        Assert.Null(await releases.OpenPackageAsync("kundenportal-1.0.0.2.crx", cancellationToken));
         Assert.Null(await releases.OpenPackageAsync(SeedExtension.CurrentFile, cancellationToken));
     }
 

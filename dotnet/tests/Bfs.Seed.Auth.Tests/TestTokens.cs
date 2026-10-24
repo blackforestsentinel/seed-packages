@@ -13,6 +13,9 @@ public sealed class TestTokens
     public const string TenantId = "11111111-1111-1111-1111-111111111111";
     public const string ClientId = "22222222-2222-2222-2222-222222222222";
 
+    /// <summary>Client-ID der aufrufenden Anwendung (SPA) in <c>azp</c> bzw. <c>appid</c>.</summary>
+    public const string SpaClientId = "66666666-6666-6666-6666-66666666aaaa";
+
     private readonly RsaSecurityKey signingKey = new(RSA.Create(2048)) { KeyId = "test-key" };
 
     public SeedAuthOptions AuthOptions { get; } = new() { TenantId = TenantId, ClientId = ClientId };
@@ -34,10 +37,18 @@ public sealed class TestTokens
         DateTime? expires = null,
         SecurityKey? key = null,
         string[]? roles = null,
-        string? idtyp = null)
+        string? idtyp = null,
+        string? clientId = SpaClientId,
+        string version = "2.0")
     {
         var expiry = expires ?? DateTime.UtcNow.AddMinutes(30);
-        var claims = new Dictionary<string, object> { ["oid"] = "55555555-5555-5555-5555-555555555555", ["tid"] = TenantId };
+        var claims = new Dictionary<string, object> { ["oid"] = "55555555-5555-5555-5555-555555555555", ["tid"] = TenantId, ["ver"] = version };
+        if (clientId is not null)
+        {
+            // Die aufrufende Anwendung: azp in v2-Tokens, appid in v1-Tokens.
+            claims[version == "1.0" ? "appid" : "azp"] = clientId;
+        }
+
         if (scope is not null)
         {
             // Delegiertes Token mit angemeldeter Person, sonst App-only wie im Client-Credentials-Flow.
@@ -58,7 +69,7 @@ public sealed class TestTokens
 
         return new JsonWebTokenHandler().CreateToken(new SecurityTokenDescriptor
         {
-            Issuer = issuer ?? $"https://login.microsoftonline.com/{TenantId}/v2.0",
+            Issuer = issuer ?? (version == "1.0" ? $"https://sts.windows.net/{TenantId}/" : $"https://login.microsoftonline.com/{TenantId}/v2.0"),
             Audience = audience ?? ClientId,
             NotBefore = expiry.AddMinutes(-60),
             IssuedAt = expiry.AddMinutes(-60),

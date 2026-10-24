@@ -10,12 +10,12 @@ builder.UseSeedAuth();
 builder.Build().Run();
 ```
 
-- Alle HTTP-Functions verlangen ein gültiges Token: Signatur gegen die Schlüssel des Tenants, Aussteller, Audience, Laufzeit und die delegierte Berechtigung `access_as_user`. v1- und v2-Tokens gelten beide, weil eine vorhandene Registrierung im Kunden-Tenant v1-Tokens ausstellen kann.
+- Alle HTTP-Functions verlangen ein gültiges Token: Signatur gegen die Schlüssel des Tenants, Aussteller, Audience, Laufzeit und die delegierte Berechtigung `access_as_user`. v1- und v2-Tokens gelten beide, weil eine vorhandene Registrierung im Kunden-Tenant v1-Tokens ausstellen kann. Mit `Auth:AllowedClientIds` muss ein delegiertes Token außerdem von einer zugelassenen Anwendung kommen (unten, „Zugelassene Clients“).
 - Ausnahmen markiert `[AllowAnonymous]` (aus `Microsoft.AspNetCore.Authorization`) an Methode oder Klasse, etwa für den Health-Endpunkt.
 - Die angemeldete Person steht in `request.HttpContext.User`.
-- Ohne Token oder mit ungültigem Token antwortet die API mit 401, mit gültigem Token ohne passende Berechtigung oder Capability mit 403.
+- Ohne Token, mit ungültigem Token oder mit dem Token einer nicht zugelassenen Anwendung antwortet die API mit 401, mit gültigem Token ohne passende Berechtigung oder Capability mit 403.
 
-Die Einstellungen kommen aus dem Terraform-Modul `sso`: `Auth__TenantId`, `Auth__ClientId`, `Auth__Audience`, bei einer anderen delegierten Berechtigung als `access_as_user` auch `Auth__RequiredScope`. Fehlen sie, startet die App nicht.
+Die Einstellungen kommen aus dem Terraform-Modul `sso`: `Auth__TenantId`, `Auth__ClientId`, `Auth__Audience`, bei einer anderen delegierten Berechtigung als `access_as_user` auch `Auth__RequiredScope`. Fehlen sie, startet die App nicht. Dazu kommen die zugelassenen Clients in `Auth__AllowedClientIds__0`, `__1`, …
 
 ## Rollen und Capabilities
 
@@ -68,6 +68,8 @@ Die API liest die Zuordnung aus `project.yaml` im Ausgabeordner der App (`Auth:P
 
 So gilt lokal, in Tests und in Azure dieselbe Datei, und eine geänderte Zuordnung braucht nur einen Deploy, keine Infrastruktur-Freigabe. Fehlt die Datei oder der Abschnitt, ist die Zuordnung leer und alles läuft wie bisher.
 
+`[RequireCapability]` und `[RequireScope]` prüft nur die Middleware von `UseSeedAuth()`. Fehlt der Aufruf, etwa weil das Feature sso aus ist, startet eine App mit `AddSeedCore()` nicht, solange eine Function mit einem der Attribute aufrufbar ist; sonst wäre sie ohne Anmeldung erreichbar. Functions, die nur mit sso Sinn ergeben, schaltet das Projekt ohne sso per App-Setting `AzureWebJobs.<Name>.Disabled=true` ab (siehe Bfs.Seed.Functions.Core).
+
 Tippfehler fallen früh auf: Nennt ein `[RequireCapability]` eine Capability, die keine Rolle vergibt, startet die App nicht. Denselben Fehler findet ein Test schon im Build:
 
 ```csharp
@@ -84,6 +86,21 @@ Assert.Empty(SeedCapabilityCheck.FindUnknownCapabilities(map, typeof(Program).As
 Dienste und Automatisierungen rufen die API mit einem App-only-Token auf (Client-Credentials-Flow, ohne `scp`). Die Middleware nimmt es nur an, wenn es eine App-Rolle trägt, die `auth.roles` mit `memberTypes: [Application]` (oder beiden) vorsieht; sonst antwortet sie mit 403. Die Capabilities löst sie genauso auf. Scopes gelten nur für delegierte Tokens, App-only-Tokens prüft die API allein über ihre Rollen. `User.IsApplication()` unterscheidet die beiden Fälle.
 
 Die aufrufende Anwendung trägt die Rolle in ihrer eigenen Registrierung unter „API-Berechtigungen“ als Anwendungsberechtigung der API ein; ein Admin erteilt dafür die Einwilligung. Eine Managed Identity bekommt die Rolle per App-Rollen-Zuweisung über Graph.
+
+## Zugelassene Clients
+
+Ohne weitere Einstellung nimmt die API jedes delegierte Token mit passender Audience und Berechtigung an, gleich welche Anwendung es geholt hat. Holen kann es jede Anwendung, der im Tenant jemand die Berechtigung erteilt hat. Mit `Auth:AllowedClientIds` gilt das nur für die genannten Anwendungen:
+
+```json
+"Auth__AllowedClientIds__0": "<Client-ID der SPA>",
+"Auth__AllowedClientIds__1": "<Client-ID des Custom Connectors>"
+```
+
+- Verglichen wird die Client-ID der aufrufenden Anwendung, `azp` in v2-Tokens und `appid` in v1-Tokens, als GUID ohne Rücksicht auf Groß- und Kleinschreibung. Ein Token ohne beide Claims scheitert.
+- Das Token einer anderen Anwendung lehnt die API mit 401 und `error="invalid_token"` ab, wie ein ungültiges Token und noch vor der Prüfung des Scopes. Das Log nennt die Client-ID, damit eine vergessene Anwendung schnell auffällt.
+- App-only-Tokens betrifft die Liste nicht; Dienste lässt die API weiter allein über ihre App-Rollen zu (oben).
+- Ohne Liste oder nur mit leeren Einträgen entfällt die Prüfung wie bisher. Ein Eintrag, der keine GUID ist, verhindert den Start.
+- Das Terraform-Modul `sso` aus seed-terraform füllt die Liste: SPA, Custom Connector, MCP-Client und die vorab zugelassenen MCP-Clients. Mit einer vorhandenen Registrierung in einem anderen Tenant setzt das Projekt die Liste selbst oder lässt sie leer.
 
 ## Lokaler Modus
 

@@ -65,8 +65,19 @@ internal sealed class SeedAuthMiddleware(
             var result = await validator.ValidateAsync(header["Bearer ".Length..].Trim(), scopes, http.RequestAborted);
             if (!result.IsValid)
             {
-                logger.LogWarning("Token für {Function} abgelehnt: {Reason}", context.FunctionDefinition.Name, result.Error);
-                // Gültiges Token ohne passende Berechtigung: 403 nach RFC 6750, sonst 401.
+                if (result.Error == SeedTokenValidationResult.ClientNotAllowed)
+                {
+                    // Die Client-ID ist kein Geheimnis und zeigt, welche Anwendung in der Liste fehlt.
+                    logger.LogWarning("Token für {Function} abgelehnt: {Reason}, Client {ClientId} steht nicht in Auth:AllowedClientIds.",
+                        context.FunctionDefinition.Name, result.Error, result.ClientId ?? "(ohne azp/appid)");
+                }
+                else
+                {
+                    logger.LogWarning("Token für {Function} abgelehnt: {Reason}", context.FunctionDefinition.Name, result.Error);
+                }
+
+                // Gültiges Token ohne passende Berechtigung: 403 nach RFC 6750, sonst 401, auch für
+                // eine nicht zugelassene Anwendung.
                 if (result.Error == SeedTokenValidationResult.MissingScope)
                 {
                     Reject(http, StatusCodes.Status403Forbidden, "insufficient_scope", scopes);

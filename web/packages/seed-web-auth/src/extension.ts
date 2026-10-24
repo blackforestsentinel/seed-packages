@@ -69,6 +69,9 @@ export interface SeedExtensionAuthOptions {
    * - session (Default): chrome.storage.session, nur im Speicher, endet mit dem Browser. Danach
    *   meldet getAccessToken die Person still über ihre Sitzung bei Entra ID wieder an.
    * - local: chrome.storage.local, überdauert Neustarts, solange das Refresh-Token gilt (24 Stunden).
+   *   Es liegt dann unverschlüsselt auf der Platte und ist für die Content Scripts der Erweiterung
+   *   lesbar; nur nehmen, wenn die stille Anmeldung nach einem Neustart nicht reicht.
+   * Beim Start löscht createSeedExtensionAuth die Tokens aus dem jeweils anderen Bereich.
    */
   tokenStorage?: 'session' | 'local';
   /** Ersatz für chrome.identity und chrome.storage, etwa in Tests. Default globalThis.chrome. */
@@ -170,9 +173,12 @@ export async function createSeedExtensionAuth(config: SeedAuthConfig, options: S
   const blockedKey = `seed-auth.${config.clientId}.blocked`;
   const lockName = `seed-auth.${config.clientId}`;
   const tokenArea = options.tokenStorage === 'local' ? browser.storage.local : browser.storage.session;
-  const tokenAreaName = options.tokenStorage === 'local' ? 'local' : 'session';
+  const otherTokenArea = options.tokenStorage === 'local' ? browser.storage.session : browser.storage.local;
 
-  let account = parseAccount((await browser.storage.local.get(accountKey))[accountKey]);
+  // Tokens nur im gewählten Bereich: Nach einem Wechsel von local zurück auf session bliebe sonst
+  // ein Refresh-Token auf der Platte liegen.
+  const [stored] = await Promise.all([browser.storage.local.get(accountKey), otherTokenArea.remove(tokensKey)]);
+  let account = parseAccount(stored[accountKey]);
   const pending = new Map<string, Promise<string>>();
 
   browser.storage.onChanged?.addListener((changes, areaName) => {
@@ -411,8 +417,8 @@ export async function createSeedExtensionAuth(config: SeedAuthConfig, options: S
       await withLock(async () => {
         account = null;
         await Promise.all([
-          browser.storage.local.remove([accountKey, ...(tokenAreaName === 'local' ? [tokensKey] : [])]),
-          browser.storage.session.remove([blockedKey, ...(tokenAreaName === 'session' ? [tokensKey] : [])]),
+          browser.storage.local.remove([accountKey, tokensKey]),
+          browser.storage.session.remove([blockedKey, tokensKey]),
         ]);
       });
     },

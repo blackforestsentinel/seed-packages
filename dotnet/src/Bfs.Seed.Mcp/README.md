@@ -34,7 +34,7 @@ public sealed class RechnungTools(RechnungService rechnungen)
 
 ## Anmeldung und Konfiguration
 
-Die Token-Prüfung macht `Bfs.Seed.Auth`: Der MCP-Endpunkt verlangt per `[RequireScope("mcp_access")]` den Scope `mcp_access`, alle anderen Functions weiter `access_as_user`. Eine Liste zugelassener Clients gibt es nicht; jedes gültige Token für die API mit `mcp_access` wird angenommen. Ohne Feature sso (`Seed:Features:Sso`) startet die App mit `AddSeedMcp()` nicht, und ohne angemeldete Person antwortet der Endpunkt immer mit `401`.
+Die Token-Prüfung macht `Bfs.Seed.Auth`: Der MCP-Endpunkt verlangt per `[RequireScope("mcp_access")]` den Scope `mcp_access`, alle anderen Functions weiter `access_as_user`. Welche Clients der Endpunkt annimmt, legt `Auth:AllowedClientIds` aus `Bfs.Seed.Auth` fest; das Terraform-Modul `sso` trägt dort neben SPA und Custom Connector den MCP-Client und die vorab zugelassenen MCP-Clients ein. Ohne Liste nimmt er jedes gültige Token für die API mit `mcp_access` an. Ohne Feature sso (`Seed:Features:Sso`) startet die App mit `AddSeedMcp()` nicht, und ohne angemeldete Person antwortet der Endpunkt immer mit `401`.
 
 | Einstellung | App-Setting | Bedeutung |
 | --- | --- | --- |

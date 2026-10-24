@@ -106,11 +106,13 @@ if (isSeedAuthConfig(config.auth)) {
 
 - Nur `login()` öffnet ein Fenster, mit `domain_hint` und, falls bekannt, `login_hint`. Die App ruft es nur nach einem Klick auf. Nirgends leitet der Einstieg die Seite um.
 - `account` kommt beim Start sofort aus `chrome.storage.local`, ohne Netz und ohne Token; der neue Tab kann also gleich den Namen zeigen. Dort liegt auch der Benutzername für `login_hint`, damit der Service Worker ihn kennt.
-- Die Tokens gelten für alle Seiten und den Service Worker der Erweiterung gemeinsam. `tokenStorage: 'session'` (Default) legt sie in `chrome.storage.session`: nur im Speicher, nach einem Neustart meldet Stufe 2 still neu an. `tokenStorage: 'local'` legt sie in `chrome.storage.local`, wo sie Neustarts überdauern, solange das Refresh-Token gilt.
+- Die Tokens gelten für alle Seiten und den Service Worker der Erweiterung gemeinsam. `tokenStorage: 'session'` (Default) legt sie in `chrome.storage.session`: nur im Speicher, nach einem Neustart meldet Stufe 2 still neu an. `tokenStorage: 'local'` legt sie in `chrome.storage.local`, wo sie Neustarts überdauern, solange das Refresh-Token gilt (Warnung unten). Beim Start löscht `createSeedExtensionAuth()` die Tokens aus dem jeweils anderen Bereich; nach einem Wechsel zurück auf `'session'` bleibt kein Refresh-Token liegen.
 - Parallele Aufrufe teilen sich eine Erneuerung, auch über Tabs hinweg (`navigator.locks`).
 - Scheitert Stufe 2, versucht der Einstieg sie für denselben Scope-Satz in dieser Browser-Sitzung nicht noch einmal, sondern wirft sofort; `login()` setzt das zurück. Netzwerk- und Serverfehler des Token-Endpunkts lösen Stufe 2 nicht aus, sondern gehen weiter.
 - `logout()` löscht Tokens, Konto und Merker. Die Sitzung bei Entra ID gehört dem Browser-Profil und bleibt.
 - `redirectBridgePath` aus der Konfiguration gilt hier nicht; sonst ist sie dieselbe wie im Web, auch `directory` für Graph.
+
+> **Warnung zu `tokenStorage: 'local'`:** Das Refresh-Token liegt dann unverschlüsselt im Browser-Profil auf der Platte und ist für die Content Scripts der Erweiterung lesbar, die in fremden Webseiten laufen; eine Lücke dort reicht, um es abzugreifen. Damit lassen sich bis zu 24 Stunden lang Tokens für die API holen, mit Einwilligung auch für Graph. Beim Default `'session'` bleiben, Stufe 2 überbrückt Neustarts ohne Fenster. Den Zugriff auf `chrome.storage.session` nie per `chrome.storage.session.setAccessLevel()` für Content Scripts öffnen (`TRUSTED_AND_UNTRUSTED_CONTEXTS`); dann gälte dort dasselbe.
 
 Einrichtung:
 

@@ -35,8 +35,9 @@ public sealed class SeedLocalUserOptions
 
 /// <summary>
 /// Einstellungen der Token-Prüfung. Das Terraform-Modul sso setzt dafür die App-Settings
-/// <c>Auth__TenantId</c>, <c>Auth__ClientId</c> und <c>Auth__Audience</c>, bei einer anderen
-/// delegierten Berechtigung als <c>access_as_user</c> zusätzlich <c>Auth__RequiredScope</c>.
+/// <c>Auth__TenantId</c>, <c>Auth__ClientId</c>, <c>Auth__Audience</c> und
+/// <c>Auth__AllowedClientIds__&lt;n&gt;</c>, bei einer anderen delegierten Berechtigung als
+/// <c>access_as_user</c> zusätzlich <c>Auth__RequiredScope</c>.
 /// </summary>
 public sealed class SeedAuthOptions
 {
@@ -72,6 +73,14 @@ public sealed class SeedAuthOptions
     /// ersetzt sie je Function.
     /// </summary>
     public string RequiredScope { get; set; } = "access_as_user";
+
+    /// <summary>
+    /// Client-IDs der Anwendungen, deren delegierte Tokens die API annimmt, z. B.
+    /// <c>Auth__AllowedClientIds__0</c>. Verglichen wird <c>azp</c> (v2-Tokens) bzw. <c>appid</c>
+    /// (v1-Tokens). Leer heißt: jede Anwendung, deren Token Audience und Berechtigung erfüllt.
+    /// App-only-Tokens prüft die API allein über ihre App-Rollen, nicht über diese Liste.
+    /// </summary>
+    public List<string> AllowedClientIds { get; set; } = [];
 
     /// <summary>
     /// Pfad der Metadaten nach RFC 9728 (Protected Resource Metadata), z. B. für MCP-Clients.

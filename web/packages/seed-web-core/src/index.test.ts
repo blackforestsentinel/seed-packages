@@ -1,5 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createHttpClient, HttpError, loadRuntimeConfig } from './index.js';
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe('loadRuntimeConfig', () => {
   it('liest die Konfiguration und kürzt den Schrägstrich am Ende', async () => {
@@ -100,5 +104,63 @@ describe('createHttpClient.request', () => {
     expect(error).toMatchObject({ status: 412, body: 'veraltet' });
     expect(request?.headers.get('Content-Type')).toBe('application/json');
     expect(await request?.json()).toEqual({ title: 'a' });
+  });
+});
+
+describe('createHttpClient: Pfade und Origin', () => {
+  /** Client mit Token, der Adresse und Authorization jeder gesendeten Anfrage festhält. */
+  function setup(baseUrl: string) {
+    const sent: { url: string; authorization: string | null }[] = [];
+    const getAccessToken = vi.fn(async () => 'token-123');
+    const fetchFn = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = new Request(input, init);
+      sent.push({ url: request.url, authorization: request.headers.get('Authorization') });
+      return Response.json({});
+    }) as typeof fetch;
+    return { client: createHttpClient({ baseUrl, getAccessToken, fetch: fetchFn }), sent, getAccessToken };
+  }
+
+  it.each([
+    ['https://api.example.org', '/api/items?filter=a%20b&top=5', 'https://api.example.org/api/items?filter=a%20b&top=5'],
+    ['https://api.example.org/', '/', 'https://api.example.org/'],
+    ['http://localhost:7071', '/api/health', 'http://localhost:7071/api/health'],
+    ['https://example.org/backend/', '/api/items', 'https://example.org/backend/api/items'],
+    ['https://api.example.org', '/api/@evil.example/x', 'https://api.example.org/api/@evil.example/x'],
+  ])('setzt %s und %s zu %s zusammen, mit Token', async (baseUrl, path, url) => {
+    const { client, sent } = setup(baseUrl);
+
+    await client.get(path);
+    await client.request('GET', path);
+
+    expect(sent).toEqual([
+      { url, authorization: 'Bearer token-123' },
+      { url, authorization: 'Bearer token-123' },
+    ]);
+  });
+
+  it.each(['.evil.example/x', '@evil.example/x', ':8443/x', '//evil.example/x', '/\\evil.example/x', 'https://evil.example/x', 'api/items', ''])(
+    'lehnt den Pfad %j ab, ohne Token und ohne Anfrage',
+    async (path) => {
+      const { client, sent, getAccessToken } = setup('https://api.example.org');
+
+      await expect(client.get(path)).rejects.toThrow('muss mit genau einem / beginnen');
+      await expect(client.post(path, { a: 1 })).rejects.toThrow('muss mit genau einem / beginnen');
+      await expect(client.request('PUT', path, { body: {} })).rejects.toThrow('muss mit genau einem / beginnen');
+
+      expect(sent).toEqual([]);
+      expect(getAccessToken).not.toHaveBeenCalled();
+    },
+  );
+
+  it('nimmt bei relativer baseUrl die Origin der Seite und sendet an keine andere', async () => {
+    vi.stubGlobal('location', new URL('https://app.example.org/start'));
+    const { client, sent, getAccessToken } = setup('/');
+
+    await client.get('/api/me');
+    // Der URL-Parser entfernt den Tab; übrig bliebe //evil.example/x, also ein anderer Host.
+    await expect(client.get('/\t/evil.example/x')).rejects.toThrow('nicht zur API (https://app.example.org)');
+
+    expect(sent).toEqual([{ url: 'https://app.example.org/api/me', authorization: 'Bearer token-123' }]);
+    expect(getAccessToken).toHaveBeenCalledTimes(1);
   });
 });

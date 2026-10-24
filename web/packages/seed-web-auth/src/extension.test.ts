@@ -401,6 +401,25 @@ describe('createSeedExtensionAuth', () => {
     expect(t.local.size).toBe(0);
   });
 
+  it('löscht beim Start die Tokens aus dem Bereich, den tokenStorage nicht nutzt', async () => {
+    const t = setup();
+    await (await t.tab({ tokenStorage: 'local' })).login();
+    expect(t.local.has(tokensKey)).toBe(true);
+
+    // Zurück auf session: Das Refresh-Token bleibt nicht auf der Platte, das Konto schon.
+    const tab = await t.tab();
+
+    expect(t.local.has(tokensKey)).toBe(false);
+    expect(t.local.get(accountKey)).toMatchObject({ username: 'erika@example.org' });
+    await expect(tab.getAccessToken()).resolves.toMatch(/^at-\d+:api:/);
+    expect(flows(t.launchWebAuthFlow).map((d) => d.interactive)).toEqual([true, false]);
+    expect(t.session.has(tokensKey)).toBe(true);
+
+    // Umgekehrt bleiben mit local keine Tokens in der Sitzung.
+    await t.tab({ tokenStorage: 'local' });
+    expect(t.session.has(tokensKey)).toBe(false);
+  });
+
   it('gibt den Abbruch der Anmeldung weiter und behält den Stand', async () => {
     const t = setup();
     const auth = await t.tab();

@@ -12,6 +12,7 @@ const health = await api.get('/api/health');
 
 - `loadRuntimeConfig()` lädt `/config.json`. Die Seed-Pipeline schreibt die Datei beim Deploy je Umgebung, deshalb reicht ein Build für alle Umgebungen.
 - `createHttpClient()` spricht JSON mit der Function-API. Über `getAccessToken` hängt er ein Bearer-Token an, ab Phase 2 aus `@blackforestsentinel/seed-web-auth`.
+- Pfade beginnen mit genau einem `/` und hängen an `baseUrl` an, auch an einen Pfad darin: `https://example.org/backend` und `/api/items` ergeben `https://example.org/backend/api/items`. Pfade ohne `/` am Anfang (`.evil.example/x`, `@evil.example/x`), mit `//` oder `/\` und volle URLs lehnt der Client mit einem Fehler ab, bevor er ein Token holt oder sendet. Das Token geht nur an Schema und Host von `baseUrl`. Eine relative `baseUrl` gilt nur im Browser, für die Origin der Seite.
 
 Für bedingte Anfragen und eigene Header gibt es `request()`. Es liefert Status, Daten und Antwort-Header, und 304 gilt dort nicht als Fehler; `get`, `post`, `put` und `delete` bleiben, wie sie sind.
 

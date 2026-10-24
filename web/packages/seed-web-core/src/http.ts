@@ -12,8 +12,12 @@ export class HttpError extends Error {
 }
 
 export interface HttpClientOptions {
+  /**
+   * Adresse der API, etwa apiBaseUrl aus config.json; ein Pfad darin (https://example.org/backend)
+   * steht vor jedem Pfad der Anfragen. Relativ nur im Browser, dann gilt die Origin der Seite.
+   */
   baseUrl: string;
-  /** Liefert ein Bearer-Token, z. B. aus @blackforestsentinel/seed-web-auth. */
+  /** Liefert ein Bearer-Token, z. B. aus @blackforestsentinel/seed-web-auth. Es geht nur an die Origin von baseUrl. */
   getAccessToken?: () => Promise<string | undefined>;
   fetch?: typeof fetch;
 }
@@ -47,12 +51,35 @@ export interface HttpClient {
   request<T>(method: string, path: string, options?: RequestOptions): Promise<HttpResponse<T>>;
 }
 
-/** JSON-Client für die Function-API des Projekts. */
+/**
+ * JSON-Client für die Function-API des Projekts. Pfade beginnen mit genau einem /, etwa /api/items;
+ * andere lehnt er ab, bevor ein Token geholt oder eine Anfrage gesendet wird.
+ */
 export function createHttpClient(options: HttpClientOptions): HttpClient {
   const { baseUrl, getAccessToken, fetch: fetchFn = fetch } = options;
   const base = baseUrl.replace(/\/+$/, '');
 
+  /** Volle Adresse für einen Pfad der API; wirft, wenn sie nicht bei der API landet. */
+  function resolve(path: string): string {
+    // Ohne / am Anfang verlängert der Pfad den Host (".evil.example/x", "@evil.example/x",
+    // ":8443/x"), mit // oder /\ nennt er einen anderen Host.
+    if (!/^\/(?![/\\])/.test(path)) {
+      throw new Error(`Pfad „${path}“ muss mit genau einem / beginnen, etwa /api/items.`);
+    }
+    const page = globalThis.location?.href;
+    const url = new URL(`${base}${path}`, page);
+    // Zweite Sicherung, etwa für eine relative baseUrl: Der URL-Parser entfernt Tabs und
+    // Zeilenumbrüche, dann wird aus "/\t/evil.example" doch "//evil.example". Verglichen werden
+    // Schema und Host, weil origin bei Schemas wie chrome-extension: nur "null" ist.
+    const api = new URL(base || '/', page);
+    if (url.protocol !== api.protocol || url.host !== api.host) {
+      throw new Error(`Pfad „${path}“ führt zu ${url.protocol}//${url.host}, nicht zur API (${api.protocol}//${api.host}).`);
+    }
+    return url.href;
+  }
+
   async function call(method: string, path: string, { body, headers: extra }: RequestOptions = {}): Promise<Response> {
+    const url = resolve(path);
     const headers = new Headers({ Accept: 'application/json' });
     if (body !== undefined) {
       headers.set('Content-Type', 'application/json');
@@ -64,7 +91,7 @@ export function createHttpClient(options: HttpClientOptions): HttpClient {
       headers.set('Authorization', `Bearer ${token}`);
     }
 
-    return fetchFn(`${base}${path}`, {
+    return fetchFn(url, {
       method,
       headers,
       body: body === undefined ? undefined : JSON.stringify(body),

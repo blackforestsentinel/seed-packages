@@ -18,19 +18,29 @@ public sealed record SeedTokenValidationResult(ClaimsPrincipal? Principal, strin
     /// <summary>Token ohne angemeldete Person und ohne App-Rolle für Anwendungen.</summary>
     public const string MissingAppRole = "missing_app_role";
 
+    /// <summary>
+    /// Delegiertes Token einer Anwendung, die nicht in <see cref="SeedAuthOptions.AllowedClientIds"/>
+    /// steht. Gilt wie ein ungültiges Token (401), nicht als fehlende Berechtigung.
+    /// </summary>
+    public const string ClientNotAllowed = "client_not_allowed";
+
     /// <summary>Ob das Token gültig ist.</summary>
     public bool IsValid => Principal is not null;
 
     /// <summary>Ob das Token gültig ist, ihm aber eine Berechtigung fehlt (403 statt 401).</summary>
     public bool IsInsufficient => Error is MissingScope or MissingAppRole;
 
-    internal static SeedTokenValidationResult Fail(string error) => new(null, error);
+    /// <summary>Client-ID aus dem Token bei <see cref="ClientNotAllowed"/>, für das Log der Middleware.</summary>
+    internal string? ClientId { get; init; }
+
+    internal static SeedTokenValidationResult Fail(string error, string? clientId = null) => new(null, error) { ClientId = clientId };
 }
 
 /// <summary>
 /// Prüft Bearer-Tokens aus Entra ID: Signatur gegen die Schlüssel des Tenants, Aussteller,
-/// Audience, Laufzeit und die delegierte Berechtigung. Tokens ohne angemeldete Person (ohne
-/// <c>scp</c>) gelten nur mit einer App-Rolle, die <c>auth.roles</c> für Anwendungen vorsieht.
+/// Audience, Laufzeit und die delegierte Berechtigung, mit <see cref="SeedAuthOptions.AllowedClientIds"/>
+/// auch die aufrufende Anwendung. Tokens ohne angemeldete Person (ohne <c>scp</c>) gelten nur mit
+/// einer App-Rolle, die <c>auth.roles</c> für Anwendungen vorsieht.
 /// Die Capabilities aus den App-Rollen hängt die Prüfung als <see cref="SeedClaimTypes.Capability"/> an,
 /// die Anzeigenamen der Rollen als <see cref="SeedClaimTypes.RoleDisplayName"/>.
 /// </summary>
@@ -102,6 +112,14 @@ public sealed class SeedTokenValidator
         }
         else
         {
+            // Vor dem Scope: Ein Token einer fremden Anwendung gilt als ungültig und verrät nicht,
+            // welche Berechtigung gefehlt hätte.
+            var clientId = ClientIdOf(identity);
+            if (!IsAllowedClient(clientId, options.Value.AllowedClientIds))
+            {
+                return SeedTokenValidationResult.Fail(SeedTokenValidationResult.ClientNotAllowed, clientId);
+            }
+
             var scopes = identity.FindFirst("scp")?.Value.Split(' ', StringSplitOptions.RemoveEmptyEntries) ?? [];
             if (!scopes.Intersect(acceptedScopes, StringComparer.Ordinal).Any())
             {
@@ -127,6 +145,22 @@ public sealed class SeedTokenValidator
     internal static bool IsAppOnly(ClaimsIdentity identity) =>
         string.Equals(identity.FindFirst("idtyp")?.Value, "app", StringComparison.OrdinalIgnoreCase)
         || identity.FindFirst("scp") is null;
+
+    // Die aufrufende Anwendung steht in v2-Tokens in azp, in v1-Tokens in appid.
+    internal static string? ClientIdOf(ClaimsIdentity identity) =>
+        identity.FindFirst("azp")?.Value ?? identity.FindFirst("appid")?.Value;
+
+    /// <summary>
+    /// Ob die Anwendung zugelassen ist. Ohne Einträge (leere zählen nicht) gilt jede; sonst muss die
+    /// Client-ID als GUID in der Liste stehen, unabhängig von Groß- und Kleinschreibung. Ein Token
+    /// ohne Client-ID scheitert dann.
+    /// </summary>
+    internal static bool IsAllowedClient(string? clientId, IEnumerable<string> allowedClientIds)
+    {
+        var allowed = allowedClientIds.Where(c => !string.IsNullOrWhiteSpace(c)).ToList();
+        return allowed.Count == 0
+            || (Guid.TryParse(clientId, out var id) && allowed.Any(c => Guid.TryParse(c, out var entry) && entry == id));
+    }
 
     private async Task<TokenValidationResult> ValidateSignedAsync(string token, CancellationToken cancellationToken)
     {

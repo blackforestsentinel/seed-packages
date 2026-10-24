@@ -31,6 +31,22 @@ public class SeedAuthMiddlewareTests
     }
 
     [Fact]
+    public async Task ClientNotInAllowedClientIds_Returns401LikeInvalidToken()
+    {
+        tokens.AuthOptions.AllowedClientIds = [TestTokens.SpaClientId];
+        const string other = "77777777-7777-7777-7777-777777777777";
+
+        var spa = await InvokeAsync(nameof(CapabilityFunctions.Me), tokens.CreateToken());
+        var foreign = await InvokeAsync(nameof(CapabilityFunctions.Me), tokens.CreateToken(clientId: other));
+        var service = await InvokeAsync(nameof(CapabilityFunctions.Me), tokens.CreateToken(scope: null, roles: ["Sync"], clientId: other));
+
+        Assert.Equal((200, true), (spa.Status, spa.Called));
+        Assert.Equal((401, false), (foreign.Status, foreign.Called));
+        Assert.Equal("Bearer error=\"invalid_token\"", foreign.Http.Response.Headers.WWWAuthenticate.ToString());
+        Assert.Equal((200, true), (service.Status, service.Called));
+    }
+
+    [Fact]
     public async Task ValidToken_SetsUserWithCapabilities()
     {
         var (status, called, http) = await InvokeAsync(nameof(CapabilityFunctions.Update), tokens.CreateToken(roles: ["Admin"]));

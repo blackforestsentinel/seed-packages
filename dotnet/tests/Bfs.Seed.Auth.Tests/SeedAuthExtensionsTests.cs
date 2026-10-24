@@ -32,6 +32,32 @@ public sealed class SeedAuthExtensionsTests : IDisposable
     }
 
     [Fact]
+    public void AllowedClientIds_BindFromAppSettings()
+    {
+        var settings = Entra();
+        settings["Auth:AllowedClientIds:0"] = TestTokens.SpaClientId;
+        settings["Auth:AllowedClientIds:1"] = "77777777-7777-7777-7777-777777777777";
+
+        using var provider = Build(settings);
+
+        Assert.Equal(
+            [TestTokens.SpaClientId, "77777777-7777-7777-7777-777777777777"],
+            provider.GetRequiredService<IOptions<SeedAuthOptions>>().Value.AllowedClientIds);
+    }
+
+    [Fact]
+    public void AllowedClientIds_WithoutGuid_DoesNotStart()
+    {
+        var settings = Entra();
+        settings["Auth:AllowedClientIds:0"] = TestTokens.SpaClientId;
+        settings["Auth:AllowedClientIds:1"] = "spa-frontend";
+
+        var error = Assert.Throws<OptionsValidationException>(() => Resolve(settings));
+
+        Assert.Contains("Auth:AllowedClientIds nennt „spa-frontend“, das ist keine Client-ID (GUID).", error.Message);
+    }
+
+    [Fact]
     public void UnknownCapability_DoesNotStart()
     {
         var error = Assert.Throws<OptionsValidationException>(() => Resolve(Entra(), typeof(TypoFunctions).Assembly));

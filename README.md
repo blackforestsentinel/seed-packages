@@ -34,12 +34,18 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
+Der Tag muss auf einem Commit liegen, der schon auf `main` ist; sonst bricht der Workflow ab, bevor er baut. Die Actions in den Workflows sind auf den Commit gepinnt, Updates schlägt Dependabot vor ([`.github/dependabot.yml`](.github/dependabot.yml)).
+
 Der Workflow authentifiziert sich per Trusted Publishing (OIDC) bei nuget.org und npm. Einrichtung:
 
 - **nuget.org:** Trusted-Publishing-Richtlinie für `blackforestsentinel/seed-packages`, Workflow `release.yml`, Environment `release`. Variable `NUGET_USER` im Environment `release` mit dem nuget.org-Benutzernamen.
 - **npm:** Trusted Publisher je Paket auf npmjs.com (`seed-packages`, `release.yml`, Environment `release`, „Allow npm publish“). Eine neue Verbindung verfällt nach 48 Stunden, wenn bis dahin keine Veröffentlichung über sie läuft.
 - **Neues npm-Paket:** Trusted Publishing lässt sich erst einrichten, wenn das Paket existiert. Der Workflow erkennt neue Pakete und stellt sie per `npm stage publish` bereit; dafür braucht das Environment `release` das Secret `NPM_STAGE_TOKEN` (Granular Token, „Read and write (stage only)“, Scope `@blackforestsentinel`). Online geht das Paket nach Freigabe mit 2FA: `npm stage list`, dann `npm stage approve <id>`, oder auf npmjs.com. Danach den Trusted Publisher einrichten und das Token löschen.
 - **GitHub:** Environment `release` mit Schutzregel, damit nur Tags veröffentlichen.
+
+## Sicherheit
+
+Schwachstellen bitte vertraulich melden, nicht als Issue: siehe [SECURITY.md](SECURITY.md).
 
 ## Lizenz
 

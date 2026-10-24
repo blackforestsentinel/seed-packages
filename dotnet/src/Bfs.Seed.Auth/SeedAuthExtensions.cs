@@ -18,7 +18,8 @@ public static class SeedAuthExtensions
     /// Verlangt für alle HTTP-Functions ein gültiges Bearer-Token aus Entra ID. Ausnahmen
     /// markiert <c>[AllowAnonymous]</c>. Ohne <c>Auth:TenantId</c> und <c>Auth:ClientId</c>
     /// startet die App nicht, ebenso wenn ein <c>[RequireCapability]</c> eine Capability nennt,
-    /// die <c>auth.roles</c> in project.yaml nicht vergibt.
+    /// die <c>auth.roles</c> in project.yaml nicht vergibt, oder <c>Auth:AllowedClientIds</c> einen
+    /// Eintrag hat, der keine GUID ist.
     /// </summary>
     public static FunctionsApplicationBuilder UseSeedAuth(this FunctionsApplicationBuilder builder)
     {
@@ -59,7 +60,7 @@ public static class SeedAuthExtensions
 /// <summary>Assemblies, deren <c>[RequireCapability]</c> beim Start geprüft werden; Standard ist die App.</summary>
 internal sealed record SeedAuthAssemblies(IReadOnlyList<Assembly> Assemblies);
 
-/// <summary>Prüfungen beim Start: fehlende Einstellungen, lokaler Modus in Azure, Tippfehler in Capabilities.</summary>
+/// <summary>Prüfungen beim Start: fehlende Einstellungen, lokaler Modus in Azure, Tippfehler in Client-IDs und Capabilities.</summary>
 internal sealed class SeedAuthOptionsValidation(IConfiguration configuration, IServiceProvider services)
     : IValidateOptions<SeedAuthOptions>
 {
@@ -85,6 +86,12 @@ internal sealed class SeedAuthOptionsValidation(IConfiguration configuration, IS
             && AzureHostingVariables.FirstOrDefault(v => !string.IsNullOrEmpty(configuration[v])) is { } variable)
         {
             failures.Add($"UseSeedAuth(): Auth:Mode=Local ist nur lokal erlaubt, die App läuft aber in Azure ({variable} ist gesetzt).");
+        }
+
+        // Ein Tippfehler sperrte sonst still die Anwendung aus, die gemeint war.
+        if (options.AllowedClientIds.FirstOrDefault(c => !string.IsNullOrWhiteSpace(c) && !Guid.TryParse(c, out _)) is { } client)
+        {
+            failures.Add($"UseSeedAuth(): Auth:AllowedClientIds nennt „{client}“, das ist keine Client-ID (GUID).");
         }
 
         SeedCapabilityMap map;

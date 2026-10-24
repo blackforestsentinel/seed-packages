@@ -1,0 +1,14 @@
+# Updates für die Actions in den Workflows. Sie sind auf den Commit gepinnt; Dependabot passt
+# SHA und Versionskommentar gemeinsam an, alle Actions in einem PR je Woche.
+# NuGet und npm stehen bewusst nicht hier: Ihre Versionen sind Untergrenzen für die Projekte, die
+# die Pakete nutzen, und steigen nur mit Absicht. Bekannte Lücken darin melden die Dependabot
+# Alerts (Einstellung des Repos), unabhängig von dieser Datei.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ['*']

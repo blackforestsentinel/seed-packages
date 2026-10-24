@@ -154,6 +154,74 @@ public class SeedTokenValidatorTests
         Assert.Equal(["invoices.read", "invoices.write"], result.Principal!.GetCapabilities().Order());
     }
 
+    [Theory]
+    [InlineData("2.0")]
+    [InlineData("1.0")]
+    public async Task AllowedClientIds_AcceptListedClient_IgnoringCase(string version)
+    {
+        tokens.AuthOptions.AllowedClientIds = [OtherClientId, TestTokens.SpaClientId.ToUpperInvariant()];
+
+        var result = await CreateValidator().ValidateAsync(CreateToken(version: version), TestContext.Current.CancellationToken);
+
+        Assert.True(result.IsValid);
+    }
+
+    [Theory]
+    [InlineData("2.0")]
+    [InlineData("1.0")]
+    public async Task AllowedClientIds_RejectOtherClient_BeforeScope(string version)
+    {
+        tokens.AuthOptions.AllowedClientIds = [OtherClientId];
+
+        var allowedScope = await CreateValidator().ValidateAsync(CreateToken(version: version), TestContext.Current.CancellationToken);
+        var otherScope = await CreateValidator().ValidateAsync(CreateToken(scope: "other_scope", version: version), TestContext.Current.CancellationToken);
+
+        Assert.Equal(SeedTokenValidationResult.ClientNotAllowed, allowedScope.Error);
+        Assert.Equal(TestTokens.SpaClientId, allowedScope.ClientId);
+        Assert.False(allowedScope.IsInsufficient);
+        Assert.Equal(SeedTokenValidationResult.ClientNotAllowed, otherScope.Error);
+    }
+
+    [Fact]
+    public async Task AllowedClientIds_RejectTokenWithoutClientId()
+    {
+        tokens.AuthOptions.AllowedClientIds = [TestTokens.SpaClientId];
+
+        var result = await CreateValidator().ValidateAsync(CreateToken(clientId: null), TestContext.Current.CancellationToken);
+
+        Assert.Equal(SeedTokenValidationResult.ClientNotAllowed, result.Error);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData(" |")]
+    public async Task AllowedClientIds_EmptyOrBlank_AcceptAnyClient(string? allowed)
+    {
+        // Einträge durch | getrennt; leere Einträge wie aus einem leeren App-Setting.
+        tokens.AuthOptions.AllowedClientIds = [.. allowed?.Split('|') ?? []];
+
+        var result = await CreateValidator().ValidateAsync(CreateToken(clientId: OtherClientId), TestContext.Current.CancellationToken);
+
+        Assert.True(result.IsValid);
+    }
+
+    [Theory]
+    [InlineData(null, "2.0")]
+    [InlineData("app", "2.0")]
+    [InlineData("app", "1.0")]
+    public async Task AllowedClientIds_DoNotApplyToAppOnlyTokens(string? idtyp, string version)
+    {
+        tokens.AuthOptions.AllowedClientIds = [TestTokens.SpaClientId];
+
+        var result = await CreateValidator(Map).ValidateAsync(
+            CreateToken(scope: null, roles: ["Sync"], idtyp: idtyp, clientId: OtherClientId, version: version),
+            TestContext.Current.CancellationToken);
+
+        Assert.True(result.IsValid);
+        Assert.True(result.Principal!.IsApplication());
+    }
+
     [Fact]
     public void AllowAnonymous_IsDetectedOnMethodAndClass()
     {
@@ -161,6 +229,9 @@ public class SeedTokenValidatorTests
         Assert.False(SeedAuthMiddleware.AllowsAnonymous($"{typeof(SampleFunctions).FullName}.{nameof(SampleFunctions.Me)}"));
         Assert.True(SeedAuthMiddleware.AllowsAnonymous($"{typeof(PublicFunctions).FullName}.{nameof(PublicFunctions.Info)}"));
     }
+
+    /// <summary>Eine Anwendung, die nicht die SPA ist, etwa ein fremder Client oder ein Dienst.</summary>
+    private const string OtherClientId = "77777777-7777-7777-7777-777777777777";
 
     private static readonly SeedCapabilityMap Map = SeedCapabilityMap.Parse(SeedCapabilityMapTests.ProjectYaml);
 
@@ -175,8 +246,10 @@ public class SeedTokenValidatorTests
         DateTime? expires = null,
         SecurityKey? key = null,
         string[]? roles = null,
-        string? idtyp = null) =>
-        tokens.CreateToken(audience, issuer, scope, expires, key, roles, idtyp);
+        string? idtyp = null,
+        string? clientId = TestTokens.SpaClientId,
+        string version = "2.0") =>
+        tokens.CreateToken(audience, issuer, scope, expires, key, roles, idtyp, clientId, version);
 
     public sealed class SampleFunctions
     {

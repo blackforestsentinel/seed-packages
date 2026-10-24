@@ -1,5 +1,5 @@
 # Veröffentlicht alle Pakete in der Version des Git-Tags (v1.2.3 → 1.2.3).
-# Nur dieser Workflow veröffentlicht, nie ein lokaler Rechner.
+# Nur dieser Workflow veröffentlicht, nie ein lokaler Rechner, und nur Commits, die auf main liegen.
 #
 # Authentifizierung ohne langlebige Schlüssel:
 # - nuget.org: Trusted Publishing, Richtlinie für dieses Repo und release.yml auf nuget.org
@@ -7,15 +7,16 @@
 # - npm: Trusted Publishing je Paket auf npmjs.com mit "Allow npm publish".
 #   Neue Pakete stellt der Workflow per npm stage publish bereit (Secret NPM_STAGE_TOKEN),
 #   online gehen sie nach Freigabe mit 2FA; danach Trusted Publisher einrichten.
+#
+# Actions sind auf den Commit gepinnt (Version als Kommentar); Dependabot schlägt Updates vor.
 name: Release
 
 on:
   push:
     tags: ['v*.*.*']
 
-permissions:
-  contents: read
-  id-token: write
+# Ohne Rechte als Vorgabe; jeder Job nennt, was er braucht. id-token (OIDC) nur zum Veröffentlichen.
+permissions: {}
 
 concurrency:
   group: release
@@ -24,9 +25,24 @@ concurrency:
 jobs:
   version:
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
+      # Volle Historie: Der Checkout holt dann alle Branches, also auch origin/main für merge-base.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      # Ein Tag auf einem Commit außerhalb von main (etwa auf einem Feature-Branch) bricht hier ab,
+      # bevor nuget und npm starten.
+      - name: Tag liegt auf main
+        run: |
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::Tag $GITHUB_REF_NAME ($GITHUB_SHA) liegt nicht auf main. Veröffentlicht wird nur von main."
+            exit 1
+          fi
       - id: version
         run: |
           version="${GITHUB_REF_NAME#v}"
@@ -40,47 +56,64 @@ jobs:
     needs: version
     runs-on: ubuntu-24.04
     environment: release
+    permissions:
+      contents: read
+      id-token: write
     defaults:
       run:
         working-directory: dotnet
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-dotnet@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           global-json-file: dotnet/global.json
       - run: dotnet test --solution Bfs.Seed.slnx --configuration Release
-      - run: dotnet pack --configuration Release --output ../artifacts/nuget -p:Version=${{ needs.version.outputs.version }}
-      - uses: NuGet/login@v1
+      - run: dotnet pack --configuration Release --output ../artifacts/nuget -p:Version="$VERSION"
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+      - uses: NuGet/login@8d196754b4036150537f80ac539e15c2f1028841 # v1.2.0
         id: login
         with:
           user: ${{ vars.NUGET_USER }}
       # Das Zeitlimit gilt für den ganzen Befehl, alle Pakete samt Symbolen. Der Standard (300 s)
       # reichte nicht, nuget.org brauchte über zwei Minuten je Paket. Der Schlüssel
-      # aus NuGet/login gilt eine Stunde; 45 Minuten bleiben darunter.
+      # aus NuGet/login gilt eine Stunde; 45 Minuten bleiben darunter. Er kommt über env,
+      # nicht als Ausdruck im Skript.
       - run: >
           dotnet nuget push "../artifacts/nuget/*.nupkg"
-          --api-key "${{ steps.login.outputs.NUGET_API_KEY }}"
+          --api-key "$NUGET_API_KEY"
           --source https://api.nuget.org/v3/index.json
           --skip-duplicate
           --timeout 2700
+        env:
+          NUGET_API_KEY: ${{ steps.login.outputs.NUGET_API_KEY }}
 
   npm:
     needs: version
     runs-on: ubuntu-24.04
     environment: release
+    permissions:
+      contents: read
+      id-token: write
     defaults:
       run:
         working-directory: web
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
           registry-url: https://registry.npmjs.org
       - run: npm ci
       # Version und Abhängigkeiten der Pakete untereinander (im Repo 0.0.0-dev), etwa die
       # Peer-Abhängigkeit von seed-web-people auf seed-web-auth. npm version passt diese nicht an.
-      - run: node scripts/set-version.mjs "${{ needs.version.outputs.version }}"
+      - run: node scripts/set-version.mjs "$VERSION"
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
       - run: npm run build
       - run: npm test
       # npm stage gibt es ab npm 11.17; die Version ist fest, damit der Ablauf reproduzierbar bleibt.

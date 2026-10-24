@@ -68,6 +68,8 @@ Die API liest die Zuordnung aus `project.yaml` im Ausgabeordner der App (`Auth:P
 
 So gilt lokal, in Tests und in Azure dieselbe Datei, und eine geänderte Zuordnung braucht nur einen Deploy, keine Infrastruktur-Freigabe. Fehlt die Datei oder der Abschnitt, ist die Zuordnung leer und alles läuft wie bisher.
 
+`[RequireCapability]` und `[RequireScope]` prüft nur die Middleware von `UseSeedAuth()`. Fehlt der Aufruf, etwa weil das Feature sso aus ist, startet eine App mit `AddSeedCore()` nicht, solange eine Function mit einem der Attribute aufrufbar ist; sonst wäre sie ohne Anmeldung erreichbar. Functions, die nur mit sso Sinn ergeben, schaltet das Projekt ohne sso per App-Setting `AzureWebJobs.<Name>.Disabled=true` ab (siehe Bfs.Seed.Functions.Core).
+
 Tippfehler fallen früh auf: Nennt ein `[RequireCapability]` eine Capability, die keine Rolle vergibt, startet die App nicht. Denselben Fehler findet ein Test schon im Build:
 
 ```csharp

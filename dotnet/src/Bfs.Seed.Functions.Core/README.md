@@ -11,6 +11,8 @@ builder.Build().Run();
 
 `AddSeedCore()` registriert Application Insights und bindet `SeedOptions` an die App-Settings `Seed__Project` und `Seed__Environment`, die das Terraform-Modul `core` setzt. `SeedHealthReport.Create(...)` liefert die Antwort für den Health-Endpunkt, den der Smoke-Test der Pipeline aufruft.
 
+**Geschützte Functions nur mit Token-Prüfung:** Trägt eine Function `[RequireCapability]` oder `[RequireScope]` aus Bfs.Seed.Auth, startet die App nur, wenn `Program.cs` auch `UseSeedAuth()` aufruft. Die Attribute prüft allein dessen Middleware; ohne sie wäre die Function ohne Anmeldung erreichbar. Die Meldung beim Start nennt die betroffenen Functions. Abgeschaltete Functions zählen nicht: Ein Projekt ohne sso schaltet solche Functions per App-Setting `AzureWebJobs.<Name>.Disabled=true` ab, wie das Template seine Beispiel-Function `Settings`.
+
 ## Secrets aus dem Key Vault
 
 Das Terraform-Modul `keyvault` setzt je Secret das App-Setting `Secrets__<Name>` als Key-Vault-Referenz; die Plattform ersetzt sie beim Start der App durch den Wert. Aus dem Secret-Namen wird der Setting-Name, indem jedes Wort groß beginnt und die Bindestriche entfallen:

@@ -25,12 +25,14 @@ public static partial class SeedOpenApiDocument
     private const int MaxBytes = 1024 * 1024;
 
     /// <summary>Methoden, die Swagger 2.0 kennt, in der Reihenfolge im Dokument.</summary>
-    private static readonly string[] SwaggerMethods = ["get", "put", "post", "delete", "options", "head", "patch"];
+    internal static readonly string[] SwaggerMethods = ["get", "put", "post", "delete", "options", "head", "patch"];
 
     private static readonly JsonDocumentOptions HostJsonOptions = new() { CommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true };
 
     /// <summary>Dokument für alle HTTP-Functions der Assembly.</summary>
-    /// <exception cref="SeedOpenApiException">Eine operationId oder Methode und Pfad gibt es mehrfach.</exception>
+    /// <exception cref="SeedOpenApiException">
+    /// Eine operationId oder Methode und Pfad gibt es mehrfach, oder <see cref="OpenApiDynamicValuesAttribute"/> passt nicht.
+    /// </exception>
     public static SeedOpenApiResult Generate(Assembly assembly, SeedOpenApiOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(assembly);
@@ -42,7 +44,9 @@ public static partial class SeedOpenApiDocument
     /// neben der Assembly. Gibt die Hinweise als <c>Code: Text</c> zurück. Aufruf durch das
     /// Werkzeug Bfs.Seed.OpenApi.Export beim Build; Signatur deshalb nicht ändern.
     /// </summary>
-    /// <exception cref="SeedOpenApiException">Eine operationId oder Methode und Pfad gibt es mehrfach.</exception>
+    /// <exception cref="SeedOpenApiException">
+    /// Eine operationId oder Methode und Pfad gibt es mehrfach, oder <see cref="OpenApiDynamicValuesAttribute"/> passt nicht.
+    /// </exception>
     public static string[] Export(Assembly assembly, string outputPath)
     {
         ArgumentNullException.ThrowIfNull(assembly);
@@ -146,6 +150,7 @@ public static partial class SeedOpenApiDocument
             };
         }
 
+        DynamicValues.Check(document, warnings);
         return new SeedOpenApiResult(document, [.. warnings.Distinct()]);
     }
 
@@ -190,6 +195,20 @@ public static partial class SeedOpenApiDocument
             declared.TryAdd(annotated.Name, annotated);
         }
 
+        var dynamicValues = new Dictionary<string, OpenApiDynamicValuesAttribute>(StringComparer.OrdinalIgnoreCase);
+        foreach (var annotated in function.Method.GetCustomAttributes<OpenApiDynamicValuesAttribute>())
+        {
+            if (string.IsNullOrEmpty(annotated.Parameter))
+            {
+                throw new SeedOpenApiException(SeedOpenApiCodes.DynamicValuesAttribute, $"{where}: [OpenApiDynamicValues] an der Function braucht den Namen des Parameters, etwa [OpenApiDynamicValues(\"id\", \"{annotated.OperationId}\")]");
+            }
+
+            if (!dynamicValues.TryAdd(annotated.Parameter, annotated))
+            {
+                throw new SeedOpenApiException(SeedOpenApiCodes.DynamicValuesAttribute, $"{where}: [OpenApiDynamicValues] für Parameter {annotated.Parameter} gibt es mehrfach");
+            }
+        }
+
         foreach (Match match in RouteParameter().Matches(function.Route))
         {
             var name = match.Groups["name"].Value;
@@ -209,7 +228,8 @@ public static partial class SeedOpenApiDocument
             var type = annotated?.Type
                 ?? function.Method.GetParameters().FirstOrDefault(p => string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase))?.ParameterType
                 ?? ConstraintType(rest);
-            var parameter = Parameter(name, "path", required: true, type, annotated, schemas, $"{where}.{name}");
+            dynamicValues.Remove(name, out var dynamic);
+            var parameter = Parameter(name, "path", required: true, type, annotated, dynamic, schemas, $"{where}.{name}");
             // Sonst kodiert der Connector Pfadparameter doppelt.
             parameter["x-ms-url-encoding"] = "single";
             parameters.Add(parameter);
@@ -217,7 +237,13 @@ public static partial class SeedOpenApiDocument
 
         foreach (var annotated in declared.Values)
         {
-            parameters.Add(Parameter(annotated.Name, "query", annotated.Required, annotated.Type ?? typeof(string), annotated, schemas, $"{where}.{annotated.Name}"));
+            dynamicValues.Remove(annotated.Name, out var dynamic);
+            parameters.Add(Parameter(annotated.Name, "query", annotated.Required, annotated.Type ?? typeof(string), annotated, dynamic, schemas, $"{where}.{annotated.Name}"));
+        }
+
+        if (dynamicValues.Keys.FirstOrDefault() is { } unknown)
+        {
+            throw new SeedOpenApiException(SeedOpenApiCodes.DynamicValuesAttribute, $"{where}: [OpenApiDynamicValues] für Parameter {unknown}, den es als Pfad- oder Query-Parameter nicht gibt; für ein Feld im Body gehört das Attribut an die Eigenschaft");
         }
 
         if (function.Method.GetCustomAttribute<OpenApiRequestBodyAttribute>() is { } body)
@@ -276,7 +302,7 @@ public static partial class SeedOpenApiDocument
         return operation;
     }
 
-    private static JsonObject Parameter(string name, string location, bool required, Type type, OpenApiParameterAttribute? annotated, SwaggerSchemas schemas, string where)
+    private static JsonObject Parameter(string name, string location, bool required, Type type, OpenApiParameterAttribute? annotated, OpenApiDynamicValuesAttribute? dynamicValues, SwaggerSchemas schemas, string where)
     {
         var parameter = new JsonObject { ["name"] = name, ["in"] = location, ["required"] = required };
         if (annotated?.Description is not null)
@@ -297,6 +323,11 @@ public static partial class SeedOpenApiDocument
         foreach (var (key, value) in schemas.ParameterType(type, where))
         {
             parameter[key] = value?.DeepClone();
+        }
+
+        if (dynamicValues is not null)
+        {
+            parameter[DynamicValues.Key] = DynamicValues.Extension(dynamicValues, where);
         }
 
         return parameter;

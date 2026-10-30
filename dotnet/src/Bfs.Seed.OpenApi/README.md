@@ -42,6 +42,7 @@ public sealed record Invoice(
 | `[assembly: OpenApiInfo(title)]` | `info.title` (im Connector dessen Name, höchstens 30 Zeichen) und `Description` |
 | `[OpenApiOperation(operationId, summary)]` | operationId (interner Name der Aktion), summary (Titel, höchstens 80 Zeichen), `Description` (danach wählt Copilot Studio Aktionen aus), `Visibility` (`x-ms-visibility`) |
 | `[OpenApiParameter(name)]` | ergänzt einen Routenparameter (`Description`, `Summary` als `x-ms-summary`, `Visibility`, `Type`) oder legt einen Query-Parameter an (`Type`, Standard string, `Required`) |
+| `[OpenApiDynamicValues(parameter, operationId)]` | Auswahlliste für einen Parameter aus einer anderen Operation (`x-ms-dynamic-values`), siehe [Auswahllisten](#auswahllisten); an der Eigenschaft eines Body-Typs ohne `parameter` |
 | `[OpenApiRequestBody(typeof(T))]` | JSON-Body, `Required` Standard ja |
 | `[OpenApiResponse(status)]`, `[OpenApiResponse(status, typeof(T))]` | Antworten, mehrere erlaubt; ohne `Description` der Standardtext des Statuscodes |
 | `[OpenApiIgnore]` | nimmt eine Function oder alle einer Klasse heraus |
@@ -54,6 +55,65 @@ Was der Generator selbst ermittelt:
 - **Schemas** nach System.Text.Json mit den Web-Standards (camelCase, Zahlen als Zahlen). Objekte stehen unter `definitions` und werden per `$ref` eingebunden, auch rekursive; generische Typen heißen etwa `PageOfInvoice`.
 - **Pflichtfelder** sind Konstruktorparameter ohne Standardwert, die nicht nullbar sind, sowie Eigenschaften mit `required` oder `[JsonRequired]`. Nullbare Werte (`string?`, `int?`) sind keine Pflicht und tragen `x-nullable: true`.
 - **Beschreibungen** von Eigenschaften: `[Description]` an der Eigenschaft oder am Record-Parameter (`[property: Description("…")]`), sonst die XML-Doku (`<param>` des Records oder primären Konstruktors, `<summary>` der Eigenschaft), wenn das Projekt `<GenerateDocumentationFile>true</GenerateDocumentationFile>` setzt. Die `<summary>` eines Typs bleibt draußen, sie ist meist für Entwickler geschrieben. Gegen die Compiler-Warnungen zu fehlenden Kommentaren: `<NoWarn>$(NoWarn);CS1591;CS1573</NoWarn>`.
+
+## Auswahllisten
+
+Statt eines freien Felds für eine ID zeigen Power Automate und Copilot Studio eine Auswahlliste, deren Werte eine andere Operation liefert (`x-ms-dynamic-values`). Das Attribut steht an der Function für einen Pfad- oder Query-Parameter oder an der Eigenschaft eines Body-Typs:
+
+```csharp
+// Quelle: Prozesse, die die angemeldete Person beschreiben darf. Internal: keine eigene Aktion.
+[Function("ListWritableProcesses")]
+[OpenApiOperation("ListWritableProcesses", "Beschreibbare Prozesse", Visibility = OpenApiVisibility.Internal)]
+[OpenApiParameter("area")]
+[OpenApiResponse(200, typeof(Page<ProcessInfo>))]
+public IActionResult ListWritable(
+    [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "processes/writable")] HttpRequest request) => ...;
+
+[Function("ListTasks")]
+[OpenApiOperation("ListTasks", "Aufgaben eines Prozesses")]
+[OpenApiParameter("processId", Required = true, Summary = "Prozess")]
+[OpenApiDynamicValues("processId", "ListWritableProcesses", ValueCollection = "items", ValuePath = "id", ValueTitle = "title", Parameters = ["area=sales"])]
+[OpenApiResponse(200, typeof(IReadOnlyList<TaskItem>))]
+public IActionResult ListTasks(
+    [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "tasks")] HttpRequest request) => ...;
+
+// Feld im Body: an der Eigenschaft, bei Records mit property:.
+public sealed record CreateTaskRequest(
+    [property: OpenApiDynamicValues("ListWritableProcesses", ValueCollection = "items", ValuePath = "id", ValueTitle = "title")] string ProcessId,
+    string Title);
+
+public sealed record Page<T>(IReadOnlyList<T> Items, string? NextLink);
+
+public sealed record ProcessInfo(string Id, string Title);
+```
+
+Am Parameter `processId` steht dann (an der Eigenschaft `processId` unter `definitions` genauso, mit leerem `parameters`):
+
+```json
+"x-ms-dynamic-values": {
+  "operationId": "ListWritableProcesses",
+  "value-path": "id",
+  "value-title": "title",
+  "value-collection": "items",
+  "parameters": { "area": "sales" }
+}
+```
+
+| Eigenschaft | Schlüssel | Bedeutung |
+| --- | --- | --- |
+| `OperationId` | `operationId` | Quelle der Werte; nimmt ihre Function mehrere Methoden an, mit angehängter Methode (`ItemGet`) |
+| `ValueCollection` | `value-collection` | Pfad zur Liste in der Antwort; ohne Angabe ist die Antwort selbst die Liste |
+| `ValuePath` | `value-path` | Pfad zum Wert in einem Element; er landet im Parameter |
+| `ValueTitle` | `value-title` | Pfad zum angezeigten Text in einem Element |
+| `Parameters` | `parameters` | Aufruf der Quelle: `name=wert` mit festem Wert, `name={anderer}` mit dem Wert des Parameters `anderer` der Operation, in der die Auswahl steht (`{ "parameter": "anderer" }`) |
+
+Pfade sind mit `/` getrennt, ohne führenden `/` (`data/items`), Namen wie im JSON (camelCase). Feste Werte stehen als Text im Dokument. `parameters` fehlt nie, Microsoft verlangt es auch leer.
+
+Der Generator prüft beim Erzeugen: Die operationId muss es im Dokument geben (`SEEDOPENAPI102`, mit Vorschlag bei angehängter Methode oder anderer Schreibweise), das Attribut muss zu einem Parameter passen (`SEEDOPENAPI103`). Als Warnung `SEEDOPENAPI013`: Parameter, die die Quelle nicht kennt oder die ihr als Pflicht fehlen, Verweise auf Parameter, die die Operation nicht hat, und Pfade, die im Antwortschema der Quelle fehlen.
+
+- **Quelle mit `Visibility = OpenApiVisibility.Internal`:** Sie erscheint nicht als eigene Aktion, liefert aber die Werte.
+- **Keine Berechtigungsprüfung:** Die Quelle läuft mit der Anmeldung der Person und filtert selbst; die Aktion prüft den Wert trotzdem, Aufrufe ohne die Auswahlliste sind jederzeit möglich.
+- **Grenzen:** Verweise nur auf ganze Parameter, nicht auf Felder im Body; dafür bräuchte es `x-ms-dynamic-list`, das der Generator nicht schreibt. Gedacht für einfache Werte (Text, Zahl, Guid); an einer Eigenschaft mit Objekttyp schreibt der Generator keine Auswahlliste. Verweise an Eigenschaften prüft der Generator nicht, sie gelten für jede Operation, die den Typ nutzt.
 
 ## Wo die Datei landet
 
@@ -94,6 +154,7 @@ Hinweise zeigt der Build als Warnung mit Code; openapi.json entsteht trotzdem. W
 | `SEEDOPENAPI010` | zwei Typen mit gleichem Namen; der zweite bekommt eine Nummer (`Item2`) |
 | `SEEDOPENAPI011` | openapi.json größer als 1 MB, der Custom Connector lehnt das ab |
 | `SEEDOPENAPI012` | `AuthorizationLevel` ist nicht `Anonymous`; den Function-Key sendet der Connector nicht |
+| `SEEDOPENAPI013` | Auswahlliste passt nicht zur Quelle: unbekannter oder fehlender Pflichtparameter, Verweis ins Leere, Pfad nicht im Antwortschema |
 
 Fehler brechen den Build ab:
 
@@ -101,6 +162,8 @@ Fehler brechen den Build ab:
 | --- | --- |
 | `SEEDOPENAPI100` | operationId mehrfach vergeben (ohne Groß- und Kleinschreibung) |
 | `SEEDOPENAPI101` | Methode und Pfad mehrfach, etwa `GET /items/{id}` in zwei Functions |
+| `SEEDOPENAPI102` | `[OpenApiDynamicValues]` nennt eine operationId, die es im Dokument nicht gibt |
+| `SEEDOPENAPI103` | `[OpenApiDynamicValues]` falsch verwendet: an der Function ohne oder mit unbekanntem Parameter, an einer Eigenschaft mit Parameter oder mehrfach, `Parameters` nicht in der Form `name=wert` |
 | `SEEDOPENAPI199` | Export fehlgeschlagen, etwa weil die App nicht ladbar ist oder ASP.NET Core 10 fehlt; Einzelheiten im Build-Log |
 
 ## Grenzen

@@ -6,7 +6,8 @@ namespace Bfs.Seed.OpenApi.Tests;
 
 /// <summary>
 /// Prüft die Regeln von Swagger 2.0, an denen der Custom Connector scheitern würde: Pflichtfelder,
-/// Parameter, auflösbare Verweise, nur Schlüsselwörter aus Swagger 2.0 (keine Typ-Listen, kein anyOf).
+/// Parameter, auflösbare Verweise, nur Schlüsselwörter aus Swagger 2.0 (keine Typ-Listen, kein anyOf),
+/// x-ms-dynamic-values mit den Schlüsseln laut Microsoft und vorhandener operationId.
 /// Kein vollständiger Validator; im Build prüft zusätzlich swagger-cli (README).
 /// </summary>
 internal static partial class SwaggerValidator
@@ -15,6 +16,7 @@ internal static partial class SwaggerValidator
     private static readonly HashSet<string> Types = ["string", "number", "integer", "boolean", "array", "object", "file"];
     private static readonly HashSet<string> ParameterTypes = ["string", "number", "integer", "boolean", "array"];
     private static readonly HashSet<string> Locations = ["path", "query", "header", "body", "formData"];
+    private static readonly HashSet<string> DynamicValuesKeys = ["operationId", "parameters", "value-collection", "value-title", "value-path"];
 
     /// <summary>Schlüsselwörter des Schema-Objekts in Swagger 2.0; dazu kommen x-…</summary>
     private static readonly HashSet<string> SchemaKeywords =
@@ -37,6 +39,7 @@ internal static partial class SwaggerValidator
         Check(document.Text("basePath")?.StartsWith('/') == true, "basePath beginnt nicht mit /");
 
         var operationIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var dynamicValues = new List<(string Where, JsonNode? Extension)>();
         if (document["paths"] is not JsonObject paths)
         {
             errors.Add("paths fehlt");
@@ -61,6 +64,11 @@ internal static partial class SwaggerValidator
                     var location = parameter.Text("in");
                     Check(name is not null && location is not null && Locations.Contains(location), $"{where}: Parameter ohne name oder in");
                     Check(parameter["required"]?.GetValueKind() is null or JsonValueKind.True or JsonValueKind.False, $"{where}.{name}: required ist kein bool");
+                    if (parameter.ContainsKey("x-ms-dynamic-values"))
+                    {
+                        dynamicValues.Add(($"{where}.{name}", parameter["x-ms-dynamic-values"]));
+                    }
+
                     if (location == "body")
                     {
                         Check(parameter["schema"] is JsonObject && parameter["type"] is null, $"{where}.{name}: body braucht schema statt type");
@@ -112,6 +120,37 @@ internal static partial class SwaggerValidator
             Schema(schema, $"definitions.{name}");
         }
 
+        // Erst hier: Die Quelle darf im Dokument nach der Operation stehen, die sie nutzt.
+        var exactIds = paths.SelectMany(p => p.Value!.AsObject().Select(m => m.Value.Text("operationId"))).ToHashSet(StringComparer.Ordinal);
+        foreach (var (where, node) in dynamicValues)
+        {
+            if (node is not JsonObject extension)
+            {
+                errors.Add($"{where}: x-ms-dynamic-values ist kein Objekt");
+                continue;
+            }
+
+            Check(extension.All(e => DynamicValuesKeys.Contains(e.Key)), $"{where}: x-ms-dynamic-values mit unbekanntem Schlüssel");
+            Check(extension.Text("operationId") is { } id && exactIds.Contains(id), $"{where}: x-ms-dynamic-values nennt keine operationId des Dokuments");
+            foreach (var key in new[] { "value-collection", "value-title", "value-path" })
+            {
+                Check(extension[key] is null || extension.Text(key) is { Length: > 0 } path && !path.StartsWith('/'), $"{where}: {key} ist kein Pfad ohne führenden /");
+            }
+
+            if (extension["parameters"] is not JsonObject parameters)
+            {
+                errors.Add($"{where}: x-ms-dynamic-values ohne parameters");
+                continue;
+            }
+
+            foreach (var (name, value) in parameters)
+            {
+                Check(
+                    value is JsonValue || value is JsonObject { Count: 1 } reference && reference.Text("parameter") is not null,
+                    $"{where}: Parameter {name} ist weder fester Wert noch {{\"parameter\": …}}");
+            }
+        }
+
         return errors;
 
         void Check(bool condition, string message)
@@ -133,6 +172,11 @@ internal static partial class SwaggerValidator
             foreach (var (key, _) in schema)
             {
                 Check(SchemaKeywords.Contains(key) || key.StartsWith("x-", StringComparison.Ordinal), $"{where}: {key} gibt es in Swagger 2.0 nicht");
+            }
+
+            if (schema.ContainsKey("x-ms-dynamic-values"))
+            {
+                dynamicValues.Add((where, schema["x-ms-dynamic-values"]));
             }
 
             if (schema["$ref"] is { } reference)

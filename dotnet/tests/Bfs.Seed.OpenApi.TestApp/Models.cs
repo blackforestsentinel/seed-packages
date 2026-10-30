@@ -37,7 +37,10 @@ public enum OrderState
 }
 
 /// <param name="Customer">Name des Kunden.</param>
-public sealed record CreateOrderRequest(string Customer, IReadOnlyList<OrderLine> Lines, string? Note)
+public sealed record CreateOrderRequest(
+    [property: OpenApiDynamicValues("ListCustomers", ValuePath = "name", ValueTitle = "name", ValueCollection = "items")] string Customer,
+    IReadOnlyList<OrderLine> Lines,
+    string? Note)
 {
     /// <summary>Herkunft der Bestellung.</summary>
     public required string Channel { get; init; }

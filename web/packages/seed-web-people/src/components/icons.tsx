@@ -61,6 +61,28 @@ export function PersonIcon(props: IconProps) {
   );
 }
 
+/** Anwendung (Service Principal vom Typ Application). */
+export function AppIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="3.5" y="3.5" width="5" height="5" rx="1" />
+      <rect x="11.5" y="3.5" width="5" height="5" rx="1" />
+      <rect x="3.5" y="11.5" width="5" height="5" rx="1" />
+      <rect x="11.5" y="11.5" width="5" height="5" rx="1" />
+    </Icon>
+  );
+}
+
+/** Verwaltete Identität (Service Principal vom Typ ManagedIdentity). */
+export function KeyIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="6.75" cy="10" r="3.25" />
+      <path d="M10 10h7M14.5 10v2.5M16.75 10v2" />
+    </Icon>
+  );
+}
+
 export function MailIcon(props: IconProps) {
   return (
     <Icon {...props}>

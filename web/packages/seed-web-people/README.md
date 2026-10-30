@@ -5,7 +5,7 @@ React-Komponenten rund um Personen für Frontends aus [Sentinel Seed](https://gi
 - Optik an Fluent 2 angelehnt (Teams, Outlook), ohne Abhängigkeit von `@fluentui/*`.
 - Ein statisches Stylesheet, keine eingefügten Styles; passt zur CSP der Seed-Apps (`style-src 'self'`).
 - Bilder als `data:`-URL; die CSP erlaubt `img-src 'self' data:` schon.
-- Rund 14 KB JavaScript und 6 KB CSS nach gzip, ohne React. Einzelne Komponenten lassen sich per Tree-Shaking einbinden.
+- Rund 16 KB JavaScript und 6 KB CSS nach gzip, ohne React. Einzelne Komponenten lassen sich per Tree-Shaking einbinden.
 
 ## Einbau
 
@@ -51,17 +51,18 @@ if (auth && !auth.account) {
 <CurrentUserMenu menuItems={[{ label: 'Hilfe', href: '/hilfe' }]} />
 <PersonLabel id={invoice.approvedBy} secondary={formatDate(invoice.approvedAt)} card />
 <PeoplePicker multiple value={reviewers} onChange={setReviewers} onlyWithAppRole roles={['Admin']} />
+<PeoplePicker multiple value={writers} onChange={setWriters} principalTypes={['user', 'servicePrincipal']} />
 <AvatarGroup people={task.participants} max={4} />
 ```
 
 | Komponente | Zeigt | Wichtige Props |
 | --- | --- | --- |
-| `Avatar` | Foto; ohne Foto Initialen auf einer Farbe aus der ID; Platzhalter beim Laden | `id`, `name`, `image`, `size` (16 bis 96, Default 32), `shape` (`circular`, `square`), `presence` (`true` oder fester Status), `color`, `decorative` |
+| `Avatar` | Foto; ohne Foto Initialen auf einer Farbe aus der ID; Platzhalter beim Laden; für Anwendungen ein Symbol | `id`, `name`, `image`, `kind`, `servicePrincipalType`, `size` (16 bis 96, Default 32), `shape` (`circular`, `square`), `presence` (`true` oder fester Status), `color`, `decorative` |
 | `PersonLabel` | Avatar, Name, optional zweite Zeile; mit `card` die `PersonCard` beim Überfahren und per Tastatur | `id`, `name`, `person`, `secondary`, `secondaryField` (`mail`, `jobTitle`, `department`), `size`, `presence`, `card` |
 | `PersonCard` | größeres Bild, Name, Position, Abteilung, Status, Mail, Link zum Teams-Chat | `id`, `person`, `name`, `presence`, `chat`, `actions` |
 | `AvatarGroup` | mehrere Avatare überlappend, ab `max` „+n“ mit den übrigen Namen als Titel | `people` (IDs oder `{ id, name }`), `max` (Default 4), `size` |
 | `CurrentUserMenu` | Avatar, Name, Rolle (Anzeigename aus `/api/me`), Abmelden; mit `menuItems` ein Menü | `menuItems`, `renderTrigger`, `showRole`, `presence`, `onSignOut` (`null` blendet aus) |
-| `PeoplePicker` | Suchfeld mit Vorschlägen, eine oder mehrere Personen als Chips | `value`/`defaultValue`, `onChange`, `multiple`, `filter`, `renderOption`, `onlyWithAppRole`, `roles`, `minChars` (2), `debounceMs` (250), `maxSuggestions` (8), `labels` |
+| `PeoplePicker` | Suchfeld mit Vorschlägen, eine oder mehrere Personen als Chips | `value`/`defaultValue`, `onChange`, `multiple`, `filter`, `renderOption`, `onlyWithAppRole`, `roles`, `principalTypes`, `servicePrincipalTypes`, `minChars` (2), `debounceMs` (250), `maxSuggestions` (8), `labels` |
 | `SignInPage` | Anmeldeseite mit App-Name und Knopf | `appName`, `description`, `logo`, `onSignIn` (Default `auth.login()`), `error`, `footer` |
 | `AccessDenied` | angemeldet, aber ohne Rolle oder Capability: Erklärung, Ansprechperson, Kontowechsel | `appName`, `reason` (`no-role`, `missing-capability`), `capability`, `contact`, `actions`, `onSignOut` |
 | `RoleBadge` | Rolle als Etikett, Anzeigename aus `/api/me` | `role`, `displayName`, `appearance` (`tint`, `filled`, `outline`) |
@@ -75,6 +76,31 @@ if (auth && !auth.account) {
 - **`onlyWithAppRole`** zeigt nur Personen mit einer App-Rolle der API, mit `roles` nur mit diesen Rollen. Das Paket liest die Zuweisungen der API-Registrierung (`/servicePrincipals(appId='…')/appRoleAssignedTo`) und löst Gruppen samt verschachtelter Gruppen auf (`/groups/{id}/transitiveMembers`). Das Ergebnis bleibt zehn Minuten im Zwischenspeicher.
 - Ohne `auth.directory.roleFilter` zeigt der Picker mit `onlyWithAppRole` niemanden, sondern einen Fehler im Feld (`data-state="error"`) und in der Konsole. Im lokalen Modus filtert er nach `roles` der erfundenen Personen.
 
+### Anwendungen und verwaltete Identitäten
+
+Wer einen Datensatz bearbeiten darf, ist oft nicht nur eine Person, sondern auch eine verwaltete Identität (Managed Identity) oder eine andere Anwendung. Mit `auth.directory.servicePrincipals` (in `project.yaml` `auth.directory.servicePrincipals: true`) kennen die Komponenten auch diese Service Principals:
+
+```tsx
+<PeoplePicker
+  multiple
+  principalTypes={['user', 'servicePrincipal']}
+  servicePrincipalTypes={['ManagedIdentity', 'Application']}
+  value={writers}
+  onChange={setWriters}
+/>
+<PersonLabel id={record.updatedBy} secondaryField="jobTitle" card />
+```
+
+- `Person.kind` ist `user` oder `servicePrincipal`. Für Service Principals kommen `appId` (Client-ID) und `servicePrincipalType` (`ManagedIdentity`, `Application`) dazu. Gespeicherte Daten ohne `kind` gelten als Person.
+- **`principalTypes`** im Picker, Default `['user']`. Mit `servicePrincipal` sucht er zusätzlich über `/servicePrincipals?$search="displayName:…"`, im selben `$batch` wie die Personen. **`servicePrincipalTypes`** beschränkt die Suche, etwa auf `['ManagedIdentity']`. Ohne Beschränkung erscheinen auch Anwendungen von Microsoft (etwa „Microsoft Graph“); `filter` blendet weitere aus.
+- Personen und Anwendungen stehen abwechselnd in den Vorschlägen. Anwendungen zeigen ihre Art und die App-ID als zweite Zeile.
+- Mit `onlyWithAppRole` erscheinen Service Principals, denen eine Rolle der API **direkt** zugewiesen ist. Gruppen löst der Filter nur nach Personen auf.
+- **`PersonLabel`, `PersonCard`, `Avatar`** erkennen Service Principals an der Objekt-ID: Gibt es keine Person dazu (`/users/{id}`), fragen sie `/servicePrincipals/{id}`. Statt Initialen zeigen sie ein Symbol auf einem Quadrat, einen Schlüssel für verwaltete Identitäten, sonst vier Kacheln. Foto und Teams-Status gibt es für Anwendungen nicht, Mail und Chat auf der Karte auch nicht; die Karte nennt Art und App-ID.
+- Mit dem Schalter lädt jedes `PersonLabel` und jeder `Avatar` mit `id` das Profil, um die Art zu kennen, auch wenn `name` gesetzt ist (im selben `$batch`, 30 Minuten im Zwischenspeicher). Den Teams-Status lädt das Label erst, wenn feststeht, dass es eine Person ist. Wer die Art schon kennt, gibt sie mit und spart die Abfrage: `person={{ kind: 'user' }}` bzw. `kind` am `Avatar`.
+- `secondaryField` zeigt bei Anwendungen deren Art („Verwaltete Identität“, „Anwendung“), wenn das Feld leer ist.
+- Ohne `auth.directory.servicePrincipals` meldet der Picker mit `principalTypes` einen Fehler im Feld und in der Konsole, statt nur Personen zu zeigen. Labels und Karten bleiben wie bisher: Für die ID einer Anwendung zeigen sie den übergebenen Namen mit Initialen.
+- Im lokalen Modus stehen Anwendungen mit `"kind": "servicePrincipal"` in `auth.directory.people`.
+
 ## Hooks
 
 Für eigene Oberflächen gibt es nur die Daten:
@@ -84,9 +110,9 @@ Für eigene Oberflächen gibt es nur die Daten:
 | `useCurrentUser()` | `{ status, user }`; `user` mit `id`, `displayName`, `username`, `roles`, `roleNames`, `capabilities`. Der Name kommt sofort aus der Anmeldung, Rollen aus `/api/me`. |
 | `usePerson(id)` | `{ status, person }` mit Name, Mail, Position, Abteilung |
 | `usePhoto(id, size)` | `{ status, url }` als `data:`-URL oder `null` |
-| `usePeopleSearch(text, options)` | `{ status, people, query }`, mit Verzögerung und Mindestlänge |
+| `usePeopleSearch(text, options)` | `{ status, people, query }`, mit Verzögerung und Mindestlänge; `principalTypes` und `servicePrincipalTypes` wie im Picker |
 | `usePresence(id)` | `{ status, presence }`, gebündelt und jede Minute aktualisiert, solange sichtbar |
-| `useAppRoleMembers(roles)` | `{ status, members, ids }`, Personen mit App-Rolle |
+| `useAppRoleMembers(roles, options)` | `{ status, members, ids }`, Personen mit App-Rolle; mit `principalTypes` auch Service Principals |
 | `useDirectory()`, `useSignOut()` | das Verzeichnis; Abmelden samt Leeren der Zwischenspeicher |
 
 `status` ist `idle` (nichts zu laden), `loading`, `ready` oder `error`. Ohne React: `createGraphDirectory()` und `createLocalDirectory()`.
@@ -119,11 +145,11 @@ Alle Berechtigungen sind delegiert: Das Frontend sieht nur, was die angemeldete 
 | `User.ReadBasic.All` | Profile und Fotos anderer, Verzeichnissuche | nein |
 | `People.Read` | relevante Personen im Picker | nein |
 | `Presence.Read.All` | Teams-Status (`presence: true`) | nein |
-| `Application.Read.All` | Rollenzuweisungen der API (`roleFilter: true`) | **ja** |
+| `Application.Read.All` | Rollenzuweisungen der API (`roleFilter: true`), Service Principals suchen und anzeigen (`servicePrincipals: true`) | **ja** |
 | `GroupMember.Read.All` | Mitglieder zugewiesener Gruppen (`roleFilter: true`) | **ja** |
 
 - Viele Tenants erlauben keine eigene Einwilligung der Personen. Dann erteilt ein Admin sie einmal für alle: Entra ID, App-Registrierungen, die SPA-Registrierung, „API-Berechtigungen“, „Administratorzustimmung erteilen“.
-- Das Paket holt ein Token für alle Scopes aus `auth.directory.scopes` zugleich. Fehlt die Einwilligung für einen davon, bleibt Graph ganz aus. Mit `roleFilter: true` daher erst die Administratorzustimmung erteilen, dann ausrollen.
+- Das Paket holt ein Token für alle Scopes aus `auth.directory.scopes` zugleich. Fehlt die Einwilligung für einen davon, bleibt Graph ganz aus. Mit `roleFilter: true` oder `servicePrincipals: true` daher erst die Administratorzustimmung erteilen, dann ausrollen.
 - Fehlt die Einwilligung, leitet seed-web-auth je Tab einmal ohne und einmal mit Dialog zu Entra ID um, damit die Person zustimmen kann. Danach läuft die App ohne Graph weiter: Initialen statt Fotos, der Picker meldet einen Fehler, in der Konsole steht ein Hinweis.
 - Lehnt Graph Position und Abteilung ab (403), fragt das Paket nur Name und Mail ab.
 
@@ -138,14 +164,15 @@ Mit `"auth": { "mode": "local" }` gibt es kein MSAL und keinen Graph-Zugriff. Un
     "mode": "local",
     "directory": {
       "people": [
-        { "id": "00000000-0000-4000-8000-000000000001", "displayName": "Erika Mustermann", "mail": "erika.mustermann@example.org", "jobTitle": "Buchhalterin", "department": "Buchhaltung", "roles": ["Admin"] }
+        { "id": "00000000-0000-4000-8000-000000000001", "displayName": "Erika Mustermann", "mail": "erika.mustermann@example.org", "jobTitle": "Buchhalterin", "department": "Buchhaltung", "roles": ["Admin"] },
+        { "id": "00000000-0000-4000-8000-000000000101", "displayName": "Nachtlauf", "kind": "servicePrincipal", "servicePrincipalType": "ManagedIdentity", "appId": "00000000-0000-4000-8000-000000000201", "roles": ["Admin"] }
       ]
     }
   }
 }
 ```
 
-`roles` ist optional und nur für `onlyWithAppRole` im lokalen Modus. Ohne `auth.directory` sucht der Picker nicht und sagt das.
+`roles` ist optional und nur für `onlyWithAppRole` im lokalen Modus. Einträge mit `"kind": "servicePrincipal"` findet der Picker nur mit `principalTypes`. Ohne `auth.directory` sucht der Picker nicht und sagt das.
 
 ## Laufzeit und Datenschutz
 

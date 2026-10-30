@@ -20,7 +20,17 @@ import {
   type DirectoryAuth,
   type Person,
 } from './index.js';
-import { createFakeGraph, directoryConfig, fakeAuth, memoryStorage, people, photoDataUrl, type FakeGraph, type FakeGraphOptions } from './test/fake-graph.js';
+import {
+  createFakeGraph,
+  directoryConfig,
+  fakeAuth,
+  memoryStorage,
+  people,
+  photoDataUrl,
+  principals,
+  type FakeGraph,
+  type FakeGraphOptions,
+} from './test/fake-graph.js';
 
 afterEach(() => {
   cleanup();
@@ -364,6 +374,126 @@ describe('PeoplePicker', () => {
     expect(onChange).toHaveBeenLastCalledWith([expect.objectContaining({ id: people.erika.id })]);
     // Gesteuert: ohne neues value bleibt die Anzeige.
     expect(screen.getByText('Max Mustermann')).toBeTruthy();
+  });
+});
+
+describe('Service Principals', () => {
+  const spConfig = { ...directoryConfig, servicePrincipals: true };
+  const spDirectory = (graph: FakeGraph) => graphDirectory(graph, spConfig);
+  const roleDirectory = (graph: FakeGraph) => graphDirectory(graph, { ...spConfig, roleFilter: true, apiClientId: 'api-client-id' });
+
+  function Picker(props: Partial<Parameters<typeof PeoplePicker>[0]>) {
+    return <PeoplePicker debounceMs={0} {...props} />;
+  }
+  const message = () => document.querySelector('.seed-picker__message')?.textContent;
+  const names = (options: HTMLElement[]) => options.map((option) => option.querySelector('.seed-picker__option-name')?.textContent);
+  const settle = () => act(async () => void (await new Promise((resolve) => setTimeout(resolve, 80))));
+
+  it('Avatar zeigt für Anwendungen ein Symbol, eckig, ohne Foto und Status', async () => {
+    const { graph } = setup(
+      <>
+        <Avatar id={principals.nightly.id} name="Erfassung Nachtlauf" kind="servicePrincipal" servicePrincipalType="ManagedIdentity" presence />
+        <Avatar id={principals.export.id} />
+      </>,
+      {
+        graph: { photos: [principals.nightly.id], presence: { [principals.nightly.id]: { availability: 'Available', activity: 'Available' } } },
+        directory: spDirectory,
+      },
+    );
+
+    const nightly = screen.getByRole('img', { name: 'Erfassung Nachtlauf, Verwaltete Identität' });
+    expect(nightly.dataset.state).toBe('icon');
+    expect(nightly.dataset.kind).toBe('servicePrincipal');
+    expect(nightly.dataset.shape).toBe('square');
+    // Ohne kind klärt das Profil die Art: /users/{id} gibt es nicht, /servicePrincipals/{id} schon.
+    const app = await screen.findByRole('img', { name: 'Erfassung Export, Anwendung' });
+    expect(app.dataset.state).toBe('icon');
+
+    await settle();
+    expect(graph.calls.some((call) => call.path.startsWith(`/users/${principals.nightly.id}/photos`))).toBe(false);
+    expect(graph.requests.some((request) => request.path.startsWith('/communications'))).toBe(false);
+  });
+
+  it('PersonLabel erkennt Anwendungen an der ID, zeigt ihre Art und die Karte ohne Mail und Chat', async () => {
+    const { graph } = setup(<PersonLabel id={principals.nightly.id} secondaryField="jobTitle" presence card />, {
+      graph: { presence: { [principals.nightly.id]: { availability: 'Available', activity: 'Available' } } },
+      directory: spDirectory,
+    });
+
+    expect(await screen.findByText('Erfassung Nachtlauf')).toBeTruthy();
+    expect(screen.getByText('Verwaltete Identität')).toBeTruthy();
+    expect(document.querySelector('.seed-avatar')?.getAttribute('data-kind')).toBe('servicePrincipal');
+
+    const trigger = screen.getByRole('button', { name: /Erfassung Nachtlauf/ });
+    act(() => trigger.focus());
+    const card = await screen.findByRole('group', { name: 'Erfassung Nachtlauf' });
+    expect(within(card).getByText(`App-ID ${principals.nightly.appId}`)).toBeTruthy();
+    expect(within(card).queryByRole('link')).toBeNull();
+
+    await settle();
+    expect(graph.requests.some((request) => request.path.startsWith('/communications'))).toBe(false);
+  });
+
+  it('PersonLabel zeigt bei Personen den Status, sobald die Art feststeht', async () => {
+    setup(<PersonLabel id={people.erika.id} name="Erika Mustermann" presence />, {
+      graph: { presence: { [people.erika.id]: { availability: 'Busy', activity: 'InACall' } } },
+      directory: spDirectory,
+    });
+
+    await waitFor(() => expect(document.querySelector('.seed-avatar')?.getAttribute('data-presence')).toBe('busy'));
+    expect(document.querySelector('.seed-avatar')?.getAttribute('data-kind')).toBeNull();
+  });
+
+  it('PeoplePicker findet mit principalTypes auch Anwendungen und übernimmt sie als Chip', async () => {
+    const onChange = vi.fn();
+    setup(<Picker multiple principalTypes={['user', 'servicePrincipal']} servicePrincipalTypes={['ManagedIdentity']} onChange={onChange} />, {
+      directory: spDirectory,
+    });
+    const input = screen.getByRole('combobox', { name: 'Person oder Anwendung suchen' });
+    expect(input.getAttribute('placeholder')).toBe('Name, Mail-Adresse oder Anwendung');
+
+    fireEvent.change(input, { target: { value: 'er' } });
+    const options = await screen.findAllByRole('option');
+    expect(names(options)).toEqual(['Erika Mustermann', 'Erfassung Nachtlauf', 'Eric Beispiel', 'Erna Platzhalter']);
+    expect(options[1]!.querySelector('.seed-picker__option-secondary')?.textContent).toBe(`Verwaltete Identität · ${principals.nightly.appId}`);
+    expect(options[1]!.querySelector('.seed-avatar')?.getAttribute('data-kind')).toBe('servicePrincipal');
+
+    fireEvent.click(options[1]!);
+    expect(onChange).toHaveBeenLastCalledWith([
+      expect.objectContaining({ id: principals.nightly.id, kind: 'servicePrincipal', appId: principals.nightly.appId, servicePrincipalType: 'ManagedIdentity' }),
+    ]);
+    expect(document.querySelector('.seed-picker__chip .seed-avatar')?.getAttribute('data-kind')).toBe('servicePrincipal');
+  });
+
+  it('PeoplePicker zeigt mit onlyWithAppRole auch Anwendungen mit Rolle', async () => {
+    setup(<Picker onlyWithAppRole roles={['Writer']} principalTypes={['user', 'servicePrincipal']} />, {
+      graph: {
+        appRoles: [{ id: 'role-writer', value: 'Writer' }],
+        assignments: [
+          { principalId: people.erika.id, principalType: 'User', principalDisplayName: 'Erika Mustermann', appRoleId: 'role-writer' },
+          { principalId: principals.nightly.id, principalType: 'ServicePrincipal', principalDisplayName: 'Erfassung Nachtlauf', appRoleId: 'role-writer' },
+        ],
+      },
+      directory: roleDirectory,
+    });
+
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'er' } });
+    expect(names(await screen.findAllByRole('option'))).toEqual(['Erika Mustermann', 'Erfassung Nachtlauf']);
+  });
+
+  it('PeoplePicker meldet principalTypes ohne auth.directory.servicePrincipals, statt zu suchen', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { graph } = setup(<Picker principalTypes={['servicePrincipal']} />);
+    const input = screen.getByRole('combobox', { name: 'Anwendung suchen' });
+
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: 'er' } });
+
+    expect(message()).toMatch(/Suche nach Anwendungen ist nicht eingerichtet/);
+    expect(input.closest('.seed-picker')?.getAttribute('data-state')).toBe('error');
+    expect(error).toHaveBeenCalledWith(expect.stringContaining('auth.directory.servicePrincipals'));
+    await act(async () => {});
+    expect(graph.requests).toHaveLength(0);
   });
 });
 

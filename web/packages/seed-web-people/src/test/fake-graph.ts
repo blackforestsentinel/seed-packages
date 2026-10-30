@@ -38,6 +38,24 @@ export const people = {
 
 export type FakeUser = (typeof people)[keyof typeof people];
 
+/** Erfundene Service Principals: eine verwaltete Identität und eine Anwendung. */
+export const principals = {
+  nightly: {
+    id: '22222222-0000-4000-8000-000000000001',
+    displayName: 'Erfassung Nachtlauf',
+    appId: '33333333-0000-4000-8000-000000000001',
+    servicePrincipalType: 'ManagedIdentity',
+  },
+  export: {
+    id: '22222222-0000-4000-8000-000000000002',
+    displayName: 'Erfassung Export',
+    appId: '33333333-0000-4000-8000-000000000002',
+    servicePrincipalType: 'Application',
+  },
+};
+
+export type FakeServicePrincipal = (typeof principals)[keyof typeof principals];
+
 /** Kleines JPEG-Ersatzbild (nur Bytes, Inhalt egal). */
 export const photoBytes: Uint8Array<ArrayBuffer> = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3, 4, 0xff, 0xd9]);
 export const photoDataUrl = `data:image/jpeg;base64,${btoa(String.fromCharCode(...photoBytes))}`;
@@ -82,7 +100,9 @@ export interface FakeGraphOptions {
   presence?: Record<string, { availability: string; activity: string }>;
   /** App-Rollen der API und ihre Zuweisungen. */
   appRoles?: { id: string; value: string }[];
-  assignments?: { principalId: string; principalType: 'User' | 'Group'; principalDisplayName: string; appRoleId: string }[];
+  assignments?: { principalId: string; principalType: 'User' | 'Group' | 'ServicePrincipal'; principalDisplayName: string; appRoleId: string }[];
+  /** Service Principals für /servicePrincipals, Default alle aus principals. */
+  servicePrincipals?: FakeServicePrincipal[];
   groups?: Record<string, FakeUser[]>;
 }
 
@@ -91,6 +111,7 @@ const BASE = 'https://graph.microsoft.com/v1.0';
 /** Gefälschtes Microsoft Graph mit $batch, Fotos, Suche, Status und Rollenzuweisungen. */
 export function createFakeGraph(options: FakeGraphOptions = {}): FakeGraph {
   const users = options.users ?? Object.values(people);
+  const servicePrincipals = options.servicePrincipals ?? Object.values(principals);
   const photos = new Set(options.photos ?? []);
   const calls: GraphCall[] = [];
   const requests: FakeGraph['requests'] = [];
@@ -147,6 +168,19 @@ export function createFakeGraph(options: FakeGraphOptions = {}): FakeGraph {
         status: 200,
         body: { value: ids.filter((id) => options.presence?.[id]).map((id) => ({ id, ...options.presence![id] })) },
       };
+    }
+    if (path === '/servicePrincipals') {
+      const types = url.searchParams.get('$filter')?.match(/servicePrincipalType in \((.*)\)/)?.[1]?.match(/'[^']*'/g)?.map((type) => type.slice(1, -1));
+      const found = servicePrincipals.filter(
+        (principal) =>
+          principal.displayName.toLowerCase().split(' ').some((word) => word.startsWith(term)) &&
+          (!types || types.includes(principal.servicePrincipalType)),
+      );
+      return { status: 200, body: { value: found } };
+    }
+    if ((match = path.match(/^\/servicePrincipals\/([^/]+)$/))) {
+      const principal = servicePrincipals.find((entry) => entry.id === match![1]);
+      return principal ? { status: 200, body: principal } : { status: 404, body: { error: { code: 'Request_ResourceNotFound' } } };
     }
     if ((match = path.match(/^\/servicePrincipals\(appId='([^']+)'\)$/))) {
       return options.appRoles ? { status: 200, body: { id: 'sp-1', appRoles: options.appRoles } } : { status: 404, body: {} };

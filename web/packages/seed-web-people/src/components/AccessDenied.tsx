@@ -111,7 +111,7 @@ export function AccessDenied({
       {showUser && user && (
         <div className={cx('seed-access-denied__user', classNames?.user)}>
           <span className="seed-access-denied__user-label">{labels?.signedInAs ?? 'Angemeldet als'}</span>
-          <PersonLabel id={user.id} name={user.displayName} secondary={user.username ?? undefined} />
+          <PersonLabel id={user.id} name={user.displayName} person={{ kind: 'user' }} secondary={user.username ?? undefined} />
         </div>
       )}
       {(signOut || actions) && (

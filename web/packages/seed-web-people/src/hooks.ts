@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { roleDisplayNames, useSeedUser } from '@blackforestsentinel/seed-web-auth/react';
-import { DirectoryError, photoSizeFor, type Directory } from './directory.js';
+import { DirectoryError, photoSizeFor, principalTypesOf, type Directory } from './directory.js';
 import { useDirectory, useDirectoryAuth } from './provider.js';
-import type { LoadStatus, Person, Presence } from './types.js';
+import type { LoadStatus, Person, Presence, PrincipalKind, ServicePrincipalType } from './types.js';
 
 // Stabile leere Werte, damit abhängige useMemo nicht bei jedem Rendern neu rechnen.
 const NO_PEOPLE: Person[] = [];
@@ -60,7 +60,10 @@ export interface PersonState {
   error?: unknown;
 }
 
-/** Profil einer Person aus dem Verzeichnis (Graph /users/{id} oder lokale Liste). */
+/**
+ * Profil einer Person aus dem Verzeichnis (Graph /users/{id} oder lokale Liste); mit
+ * auth.directory.servicePrincipals auch einer Anwendung oder verwalteten Identität.
+ */
 export function usePerson(id: string | null | undefined): PersonState {
   const directory = useDirectory();
   const state = useResource(
@@ -70,6 +73,14 @@ export function usePerson(id: string | null | undefined): PersonState {
     () => directory.getPerson(id!),
   );
   return { status: state.status, person: state.value ?? null, error: state.error };
+}
+
+/**
+ * Art des Eintrags: bekannt, aus dem Profil oder offen (undefined), solange das Profil noch lädt.
+ * resolving heißt: Das Verzeichnis kennt Service Principals, die Art steht erst mit dem Profil fest.
+ */
+export function resolvePrincipalKind(known: PrincipalKind | undefined, loaded: PersonState, resolving: boolean): PrincipalKind | undefined {
+  return known ?? loaded.person?.kind ?? (resolving && loaded.status === 'loading' ? undefined : 'user');
 }
 
 export interface PhotoState {
@@ -101,6 +112,10 @@ export interface PeopleSearchOptions {
   top?: number;
   /** false schaltet die Suche aus. */
   enabled?: boolean;
+  /** Default nur user; mit servicePrincipal auch Anwendungen und verwaltete Identitäten. */
+  principalTypes?: readonly PrincipalKind[];
+  /** Nur diese Arten von Service Principals, etwa ['ManagedIdentity']. */
+  servicePrincipalTypes?: readonly ServicePrincipalType[];
 }
 
 export interface PeopleSearchState {
@@ -114,10 +129,13 @@ export interface PeopleSearchState {
 
 /**
  * Personensuche: zuerst die für die angemeldete Person relevanten (Graph /me/people), dann das
- * Verzeichnis (/users?$search). Lokal sucht sie in auth.directory.people.
+ * Verzeichnis (/users?$search), auf Wunsch auch Service Principals (/servicePrincipals?$search).
+ * Lokal sucht sie in auth.directory.people.
  */
 export function usePeopleSearch(text: string, options: PeopleSearchOptions = {}): PeopleSearchState {
-  const { minChars = 2, debounceMs = 250, top = 10, enabled = true } = options;
+  const { minChars = 2, debounceMs = 250, top = 10, enabled = true, principalTypes, servicePrincipalTypes } = options;
+  const typeKey = [...new Set(principalTypesOf({ principalTypes }))].sort().join(',');
+  const principalTypeKey = servicePrincipalTypes?.length ? [...new Set(servicePrincipalTypes)].sort().join(',') : '*';
   const directory = useDirectory();
   const trimmed = text.trim();
   const active = enabled && directory.mode !== 'off' && trimmed.length >= minChars;
@@ -133,10 +151,10 @@ export function usePeopleSearch(text: string, options: PeopleSearchOptions = {})
   }, [trimmed, active, debounceMs]);
 
   const state = useResource(
-    active && debounced ? `search:${top}:${debounced}` : null,
+    active && debounced ? `search:${top}:${typeKey}:${principalTypeKey}:${debounced}` : null,
     directory,
     () => undefined,
-    () => directory.search(debounced, { top }),
+    () => directory.search(debounced, { top, principalTypes, servicePrincipalTypes }),
   );
 
   if (!active) {
@@ -181,19 +199,24 @@ export interface AppRoleMembersState {
 const NO_IDS: ReadonlySet<string> = new Set();
 
 /**
- * Personen mit App-Rolle der API (Graph appRoleAssignedTo, Gruppen per transitiveMembers). Ohne
- * auth.directory.roleFilter: status error mit DirectoryError('not-configured').
+ * Personen mit App-Rolle der API (Graph appRoleAssignedTo, Gruppen per transitiveMembers), mit
+ * principalTypes auch Service Principals mit direkter Zuweisung. Ohne auth.directory.roleFilter:
+ * status error mit DirectoryError('not-configured').
  */
-export function useAppRoleMembers(roles?: readonly string[], options: { enabled?: boolean } = {}): AppRoleMembersState {
-  const { enabled = true } = options;
+export function useAppRoleMembers(
+  roles?: readonly string[],
+  options: { enabled?: boolean; principalTypes?: readonly PrincipalKind[] } = {},
+): AppRoleMembersState {
+  const { enabled = true, principalTypes } = options;
   const directory = useDirectory();
   const roleKey = roles && roles.length > 0 ? [...new Set(roles)].sort().join(',') : '*';
+  const typeKey = [...new Set(principalTypesOf({ principalTypes }))].sort().join(',');
   const configured = directory.roleFilter;
   const state = useResource(
-    enabled && configured ? `roles:${roleKey}` : null,
+    enabled && configured ? `roles:${typeKey}:${roleKey}` : null,
     directory,
     () => undefined,
-    () => directory.getAppRoleMembers(roles),
+    () => directory.getAppRoleMembers(roles, { principalTypes }),
   );
   const members = state.value;
   const ids = useMemo(() => (members ? new Set(members.map((person) => person.id)) : NO_IDS), [members]);

@@ -1,8 +1,9 @@
 import { useDirectory } from '../provider.js';
+import type { PrincipalKind } from '../types.js';
 import { cx } from '../utils.js';
 import { Avatar, avatarSizeAttributes } from './Avatar.js';
 
-export type AvatarGroupPerson = string | { id?: string | null; name?: string | null };
+export type AvatarGroupPerson = string | { id?: string | null; name?: string | null; kind?: PrincipalKind };
 
 export interface AvatarGroupProps {
   /** Objekt-IDs oder Personen mit ID und Namen. */
@@ -21,7 +22,7 @@ export interface AvatarGroupProps {
 /** Mehrere Avatare überlappend, ab max mit „+n“; der Titel von „+n“ nennt die übrigen Namen. */
 export function AvatarGroup({ people, max = 4, size = 32, shape = 'circular', label, className, classNames }: AvatarGroupProps) {
   const directory = useDirectory();
-  const entries = people.map((entry) => (typeof entry === 'string' ? { id: entry, name: null } : entry));
+  const entries = people.map((entry) => (typeof entry === 'string' ? { id: entry, name: null, kind: undefined } : entry));
   // Bei Überlauf zählt „+n“ als eigener Platz.
   const visible = entries.length > max ? entries.slice(0, Math.max(max - 1, 1)) : entries;
   const hidden = entries.slice(visible.length);
@@ -41,6 +42,7 @@ export function AvatarGroup({ people, max = 4, size = 32, shape = 'circular', la
           key={entry.id ?? `${entry.name}-${index}`}
           id={entry.id}
           name={entry.name}
+          kind={entry.kind}
           size={size}
           shape={shape}
           className={cx('seed-avatar-group__item', classNames?.avatar)}

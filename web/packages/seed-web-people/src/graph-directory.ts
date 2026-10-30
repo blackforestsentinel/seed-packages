@@ -1,8 +1,8 @@
 import type { SeedDirectoryConfig } from '@blackforestsentinel/seed-web-auth';
 import { defaultStorage, TtlCache } from './cache.js';
-import { DirectoryError, type Directory, type SearchOptions } from './directory.js';
+import { DirectoryError, principalTypesOf, type Directory, type SearchOptions } from './directory.js';
 import { createGraphClient, GraphError, type GraphResponse } from './graph-client.js';
-import type { Person, PhotoSize, Presence, PresenceStatus } from './types.js';
+import type { Person, PhotoSize, Presence, PresenceStatus, PrincipalKind } from './types.js';
 
 /** Lebensdauer der Zwischenspeicher in Millisekunden. */
 export interface DirectoryTtl {
@@ -49,6 +49,7 @@ const DEFAULT_TTL: DirectoryTtl = {
 const USER_SELECT = 'id,displayName,mail,userPrincipalName,jobTitle,department,officeLocation';
 const BASIC_SELECT = 'id,displayName,mail,userPrincipalName';
 const PEOPLE_SELECT = 'id,displayName,jobTitle,department,officeLocation,userPrincipalName,scoredEmailAddresses,personType';
+const SERVICE_PRINCIPAL_SELECT = 'id,displayName,appId,servicePrincipalType';
 const NO_ROLE = '00000000-0000-0000-0000-000000000000';
 const PRESENCE_LIMIT = 650;
 const TOKEN_PAUSE = 5 * 60_000;
@@ -68,6 +69,13 @@ interface GraphPerson extends GraphUser {
   personType?: { class?: string; subclass?: string };
 }
 
+interface GraphServicePrincipal {
+  id: string;
+  displayName?: string | null;
+  appId?: string | null;
+  servicePrincipalType?: string | null;
+}
+
 interface GraphPresence {
   id: string;
   availability?: string;
@@ -77,8 +85,8 @@ interface GraphPresence {
 
 /**
  * Verzeichnis aus Microsoft Graph mit delegierten Berechtigungen: Profile, Fotos, Suche, Teams-Status
- * und Personen mit App-Rolle. Alles läuft im Browser mit dem Token der angemeldeten Person; Fotos und
- * Profile gehen nie an die eigene API.
+ * und Personen mit App-Rolle, mit servicePrincipals auch Anwendungen und verwaltete Identitäten. Alles
+ * läuft im Browser mit dem Token der angemeldeten Person; Fotos und Profile gehen nie an die eigene API.
  */
 export function createGraphDirectory(options: GraphDirectoryOptions): Directory {
   const { config } = options;
@@ -132,6 +140,36 @@ export function createGraphDirectory(options: GraphDirectoryOptions): Directory 
     return response;
   }
 
+  // --- Service Principals ---------------------------------------------------------------------
+  const servicePrincipals = config.servicePrincipals === true;
+
+  function requireServicePrincipals(types: readonly PrincipalKind[]) {
+    if (types.includes('servicePrincipal') && !servicePrincipals) {
+      throw new DirectoryError(
+        'not-configured',
+        'Service Principals sind nicht eingerichtet: auth.directory.servicePrincipals fehlt in config.json.',
+      );
+    }
+  }
+
+  let warnedApps = false;
+
+  /** Bekannt als Service Principal: kein Foto, kein Teams-Status. */
+  function knownServicePrincipal(id: string) {
+    return cache.get<Person | null>(`person:${id}`)?.kind === 'servicePrincipal';
+  }
+
+  async function getServicePrincipal(id: string): Promise<Person | null> {
+    const response = await client.get(`/servicePrincipals/${encodeURIComponent(id)}?$select=${SERVICE_PRINCIPAL_SELECT}`);
+    if (response.status === 404 || response.status === 400) {
+      return null;
+    }
+    if (response.status >= 400) {
+      throw graphFailure(response, 'Application.Read.All');
+    }
+    return toServicePrincipal(response.body as GraphServicePrincipal);
+  }
+
   // --- Teams-Status ---------------------------------------------------------------------------
   let presenceAvailable = config.presence === true;
   const presence = new Map<string, { value: Presence; fetched: number }>();
@@ -145,6 +183,9 @@ export function createGraphDirectory(options: GraphDirectoryOptions): Directory 
   }
 
   function queuePresence(id: string) {
+    if (knownServicePrincipal(id)) {
+      return;
+    }
     presenceQueue.add(id);
     presenceTimer ??= setTimeout(() => void flushPresence(), 50);
   }
@@ -209,7 +250,7 @@ export function createGraphDirectory(options: GraphDirectoryOptions): Directory 
     return items;
   }
 
-  async function loadRoleMembers(apiClientId: string, wanted: string[] | null): Promise<Person[]> {
+  async function loadRoleMembers(apiClientId: string, wanted: string[] | null, types: readonly PrincipalKind[]): Promise<Person[]> {
     const servicePrincipal = `/servicePrincipals(appId='${encodeURIComponent(apiClientId)}')`;
     const app = await client.get(`${servicePrincipal}?$select=id,appRoles`);
     if (app.status >= 400) {
@@ -232,12 +273,31 @@ export function createGraphDirectory(options: GraphDirectoryOptions): Directory 
     const relevant = assignments.filter((assignment) => assignment.appRoleId !== NO_ROLE && (!roleIds || roleIds.has(assignment.appRoleId)));
 
     const members = new Map<string, Person>();
+    const users = types.includes('user');
     for (const assignment of relevant) {
-      if (assignment.principalType === 'User') {
-        members.set(assignment.principalId, { id: assignment.principalId, displayName: assignment.principalDisplayName ?? '' });
+      if (assignment.principalType === 'User' && users) {
+        members.set(assignment.principalId, { id: assignment.principalId, displayName: assignment.principalDisplayName ?? '', kind: 'user' });
       }
     }
-    const groups = [...new Set(relevant.filter((assignment) => assignment.principalType === 'Group').map((assignment) => assignment.principalId))];
+    // Service Principals nur mit direkter Zuweisung; App-ID und Art kommen je Eintrag aus Graph,
+    // gesammelt im $batch.
+    if (types.includes('servicePrincipal')) {
+      const assigned = new Map<string, string>();
+      for (const assignment of relevant) {
+        if (assignment.principalType === 'ServicePrincipal') {
+          assigned.set(assignment.principalId, assignment.principalDisplayName ?? '');
+        }
+      }
+      const loaded = await Promise.all([...assigned.keys()].map((id) => getServicePrincipal(id)));
+      [...assigned].forEach(([id, displayName], index) => {
+        const principal = loaded[index] ?? { id, displayName, kind: 'servicePrincipal' };
+        cache.set(`person:${id}`, principal, ttl.person);
+        members.set(id, principal);
+      });
+    }
+    const groups = users
+      ? [...new Set(relevant.filter((assignment) => assignment.principalType === 'Group').map((assignment) => assignment.principalId))]
+      : [];
     const groupMembers = await Promise.all(
       groups.map((group) =>
         getAll<GraphUser>(
@@ -259,6 +319,7 @@ export function createGraphDirectory(options: GraphDirectoryOptions): Directory 
       return presenceAvailable;
     },
     roleFilter: config.roleFilter === true && !!config.apiClientId,
+    servicePrincipals,
 
     peekPerson: (id) => cache.get<Person | null>(`person:${id}`),
 
@@ -270,8 +331,10 @@ export function createGraphDirectory(options: GraphDirectoryOptions): Directory 
       }
       const response = await getUser(`/users/${encodeURIComponent(id)}`);
       if (response.status === 404 || response.status === 400) {
-        cache.set(key, null, ttl.person);
-        return null;
+        // Keine Person: vielleicht eine Anwendung oder verwaltete Identität.
+        const principal = servicePrincipals ? await getServicePrincipal(id) : null;
+        cache.set(key, principal, ttl.person);
+        return principal;
       }
       if (response.status >= 400) {
         throw graphFailure(response, 'User.ReadBasic.All');
@@ -288,6 +351,9 @@ export function createGraphDirectory(options: GraphDirectoryOptions): Directory 
       const cached = cache.get<string | null>(key);
       if (cached !== undefined) {
         return cached;
+      }
+      if (knownServicePrincipal(id)) {
+        return null;
       }
       const response = await client.get(`/users/${encodeURIComponent(id)}/photos/${size}x${size}/$value`, { binary: true });
       if (response.status === 200 && typeof response.body === 'string') {
@@ -310,46 +376,75 @@ export function createGraphDirectory(options: GraphDirectoryOptions): Directory 
       if (!query) {
         return [];
       }
+      const types = principalTypesOf(searchOptions);
+      requireServicePrincipals(types);
+      const users = types.includes('user');
+      const principals = types.includes('servicePrincipal');
+      const principalTypes = principals && searchOptions.servicePrincipalTypes?.length ? [...new Set(searchOptions.servicePrincipalTypes)].sort() : null;
       const top = searchOptions.top ?? 10;
-      const key = `search:${top}:${query.toLowerCase()}`;
+      const key = `search:${top}:${[...new Set(types)].sort().join(',')}:${principalTypes?.join(',') ?? '*'}:${query.toLowerCase()}`;
       const cached = cache.get<Person[]>(key);
       if (cached) {
         return cached;
       }
 
-      // Beide gehen gemeinsam in einem $batch: erst die für die Person relevanten Kontakte, dann
-      // das Verzeichnis. Ohne People.Read bleibt es bei der Verzeichnissuche.
-      const [relevant, directory] = await Promise.allSettled([
-        client.get(`/me/people?$search=${encodeURIComponent(`"${query}"`)}&$top=${top}&$select=${PEOPLE_SELECT}`),
-        getUser(`/users?$search=${encodeURIComponent(`"displayName:${query}" OR "mail:${query}"`)}&$top=${top}`, {
-          ConsistencyLevel: 'eventual',
-        }),
+      // Alle gehen gemeinsam in einem $batch: erst die für die Person relevanten Kontakte, dann
+      // das Verzeichnis, auf Wunsch auch die Service Principals. Ohne People.Read bleibt es bei der
+      // Verzeichnissuche.
+      const typeFilter = principalTypes
+        ? `&$filter=${encodeURIComponent(`servicePrincipalType in (${principalTypes.map((type) => `'${type.replace(/'/g, "''")}'`).join(',')})`)}`
+        : '';
+      const [relevant, directory, apps] = await Promise.allSettled([
+        users ? client.get(`/me/people?$search=${encodeURIComponent(`"${query}"`)}&$top=${top}&$select=${PEOPLE_SELECT}`) : null,
+        users
+          ? getUser(`/users?$search=${encodeURIComponent(`"displayName:${query}" OR "mail:${query}"`)}&$top=${top}`, {
+              ConsistencyLevel: 'eventual',
+            })
+          : null,
+        principals
+          ? client.get(
+              `/servicePrincipals?$search=${encodeURIComponent(`"displayName:${query}"`)}${typeFilter}&$count=true&$top=${top}&$select=${SERVICE_PRINCIPAL_SELECT}`,
+              { headers: { ConsistencyLevel: 'eventual' } },
+            )
+          : null,
       ]);
+      const ok = (result: PromiseSettledResult<GraphResponse | null>) =>
+        result.status === 'fulfilled' && result.value !== null && result.value.status < 400 ? result.value : null;
 
+      const fromRelevant: Person[] = [];
+      const fromDirectory: Person[] = [];
+      const fromApps: Person[] = [];
+      for (const entry of (ok(relevant)?.body as { value?: GraphPerson[] } | null)?.value ?? []) {
+        if (entry.id && (!entry.personType || entry.personType.subclass === 'OrganizationUser')) {
+          fromRelevant.push({ ...toPerson(entry), mail: entry.scoredEmailAddresses?.[0]?.address ?? entry.userPrincipalName ?? null });
+        }
+      }
+      for (const entry of (ok(directory)?.body as { value?: GraphUser[] } | null)?.value ?? []) {
+        fromDirectory.push(toPerson(entry));
+      }
+      for (const entry of (ok(apps)?.body as { value?: GraphServicePrincipal[] } | null)?.value ?? []) {
+        fromApps.push(toServicePrincipal(entry));
+      }
+      for (const person of [...fromDirectory, ...fromApps]) {
+        cache.set(`person:${person.id}`, person, ttl.person);
+      }
+
+      if (![relevant, directory, apps].some(ok)) {
+        const main = users ? directory : apps;
+        throw main.status === 'rejected' ? main.reason : graphFailure(main.value!, users ? 'User.ReadBasic.All' : 'Application.Read.All');
+      }
+      if (users && principals && !ok(apps) && !warnedApps) {
+        warnedApps = true;
+        console.warn('seed-web-people: Die Suche nach Service Principals ist fehlgeschlagen; der Picker zeigt nur Personen. Fehlt Application.Read.All?');
+      }
+
+      // Relevante Personen zuerst, danach Verzeichnis und Service Principals im Wechsel, damit
+      // keine Seite die andere aus den ersten Vorschlägen verdrängt.
       const results = new Map<string, Person>();
-      let succeeded = false;
-      if (relevant.status === 'fulfilled' && relevant.value.status < 400) {
-        succeeded = true;
-        for (const entry of (relevant.value.body as { value?: GraphPerson[] } | null)?.value ?? []) {
-          if (entry.id && (!entry.personType || entry.personType.subclass === 'OrganizationUser')) {
-            results.set(entry.id, { ...toPerson(entry), mail: entry.scoredEmailAddresses?.[0]?.address ?? entry.userPrincipalName ?? null });
-          }
+      for (const person of [...fromRelevant, ...interleave(fromDirectory, fromApps)]) {
+        if (!results.has(person.id)) {
+          results.set(person.id, person);
         }
-      }
-      if (directory.status === 'fulfilled' && directory.value.status < 400) {
-        succeeded = true;
-        for (const entry of (directory.value.body as { value?: GraphUser[] } | null)?.value ?? []) {
-          const person = toPerson(entry);
-          cache.set(`person:${person.id}`, person, ttl.person);
-          if (!results.has(person.id)) {
-            results.set(person.id, person);
-          }
-        }
-      }
-      if (!succeeded) {
-        throw directory.status === 'rejected'
-          ? directory.reason
-          : graphFailure(directory.value, 'User.ReadBasic.All');
       }
       const people = [...results.values()];
       cache.set(key, people, ttl.search, false);
@@ -359,7 +454,7 @@ export function createGraphDirectory(options: GraphDirectoryOptions): Directory 
     peekPresence: (id) => presence.get(id)?.value,
 
     subscribePresence(id, listener) {
-      if (!presenceAvailable) {
+      if (!presenceAvailable || knownServicePrincipal(id)) {
         return () => {};
       }
       let set = listeners.get(id);
@@ -385,22 +480,24 @@ export function createGraphDirectory(options: GraphDirectoryOptions): Directory 
       };
     },
 
-    async getAppRoleMembers(roles) {
+    async getAppRoleMembers(roles, roleOptions) {
       if (!config.roleFilter || !config.apiClientId) {
         throw new DirectoryError(
           'not-configured',
           'Der Filter nach App-Rolle ist nicht eingerichtet: auth.directory.roleFilter und apiClientId fehlen in config.json.',
         );
       }
+      const types = principalTypesOf(roleOptions);
+      requireServicePrincipals(types);
       const wanted = roles && roles.length > 0 ? [...new Set(roles)].sort() : null;
-      const key = `roles:${wanted?.join(',') ?? '*'}`;
+      const key = `roles:${[...new Set(types)].sort().join(',')}:${wanted?.join(',') ?? '*'}`;
       const cached = cache.get<Person[]>(key);
       if (cached) {
         return cached;
       }
       let pending = roleLoads.get(key);
       if (!pending) {
-        pending = loadRoleMembers(config.apiClientId, wanted)
+        pending = loadRoleMembers(config.apiClientId, wanted, types)
           .then((members) => {
             cache.set(key, members, ttl.roles);
             return members;
@@ -422,12 +519,37 @@ function toPerson(user: GraphUser): Person {
   return {
     id: user.id,
     displayName: user.displayName || user.userPrincipalName || user.mail || '',
+    kind: 'user',
     mail: user.mail ?? null,
     userPrincipalName: user.userPrincipalName ?? null,
     jobTitle: user.jobTitle ?? null,
     department: user.department ?? null,
     officeLocation: user.officeLocation ?? null,
   };
+}
+
+function toServicePrincipal(principal: GraphServicePrincipal): Person {
+  return {
+    id: principal.id,
+    displayName: principal.displayName || principal.appId || '',
+    kind: 'servicePrincipal',
+    appId: principal.appId ?? null,
+    servicePrincipalType: principal.servicePrincipalType ?? null,
+  };
+}
+
+/** Abwechselnd aus beiden Listen; die Reihenfolge innerhalb jeder Liste bleibt. */
+function interleave<T>(first: readonly T[], second: readonly T[]): T[] {
+  const result: T[] = [];
+  for (let i = 0; i < Math.max(first.length, second.length); i++) {
+    if (i < first.length) {
+      result.push(first[i]!);
+    }
+    if (i < second.length) {
+      result.push(second[i]!);
+    }
+  }
+  return result;
 }
 
 const AVAILABILITY: Record<string, PresenceStatus> = {

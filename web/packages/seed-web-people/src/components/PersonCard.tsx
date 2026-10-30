@@ -1,7 +1,8 @@
 import type { ReactNode } from 'react';
-import { usePerson, usePresence } from '../hooks.js';
+import { resolvePrincipalKind, usePerson, usePresence } from '../hooks.js';
+import { useDirectory } from '../provider.js';
 import type { Person } from '../types.js';
-import { cx, PRESENCE_LABELS, teamsChatUrl } from '../utils.js';
+import { cx, PRESENCE_LABELS, servicePrincipalLabel, teamsChatUrl } from '../utils.js';
 import { Avatar } from './Avatar.js';
 import { ChatIcon, MailIcon } from './icons.js';
 import { PresenceBadge } from './PresenceBadge.js';
@@ -13,9 +14,9 @@ export interface PersonCardProps {
   person?: Partial<Person> | null;
   /** Anzeigename, hat Vorrang. */
   name?: string | null;
-  /** Teams-Status zeigen. */
+  /** Teams-Status zeigen; nur für Personen. */
   presence?: boolean;
-  /** Link zum Teams-Chat, Default true. */
+  /** Link zum Teams-Chat, Default true; nur für Personen. */
   chat?: boolean;
   /** Avatar-Größe, Default 64. */
   size?: number;
@@ -35,28 +36,36 @@ export interface PersonCardProps {
 }
 
 /**
- * Karte mit größerem Bild, Name, Position, Abteilung, Mail und Link zum Teams-Chat. Aus span-Elementen
- * gebaut, damit sie auch in Fließtext und Tabellenzellen stehen darf (Hovercard von PersonLabel).
+ * Karte mit größerem Bild, Name, Position, Abteilung, Mail und Link zum Teams-Chat; für Anwendungen
+ * und verwaltete Identitäten Art und App-ID. Aus span-Elementen gebaut, damit sie auch in Fließtext
+ * und Tabellenzellen stehen darf (Hovercard von PersonLabel).
  */
 export function PersonCard({ id, person, name, presence = false, chat = true, size = 64, actions, className, classNames }: PersonCardProps) {
   const loaded = usePerson(id);
-  const live = usePresence(presence ? id : null);
+  const directory = useDirectory();
+  const resolving = !person?.kind && !!id && directory.servicePrincipals === true;
+  const kind = resolvePrincipalKind(person?.kind, loaded, resolving);
+  const app = kind === 'servicePrincipal';
+  const live = usePresence(presence && kind === 'user' ? id : null);
   const data: Partial<Person> = { ...person, ...withoutEmpty(loaded.person) };
   const displayName = name || data.displayName || (loaded.status === 'loading' ? '' : 'Unbekannte Person');
   const status = live.presence?.status ?? null;
-  const address = data.mail || data.userPrincipalName || null;
-  const chatAddress = data.userPrincipalName || data.mail || null;
+  const address = app ? null : data.mail || data.userPrincipalName || null;
+  const chatAddress = app ? null : data.userPrincipalName || data.mail || null;
 
   return (
     <span
       className={cx('seed-person-card', className)}
       role="group"
-      aria-label={displayName || 'Person'}
+      aria-label={displayName || (app ? servicePrincipalLabel(data.servicePrincipalType) : 'Person')}
       data-state={loaded.status === 'loading' ? 'loading' : 'ready'}
+      data-kind={app ? 'servicePrincipal' : undefined}
     >
       <Avatar
         id={id}
         name={displayName || null}
+        kind={kind}
+        servicePrincipalType={data.servicePrincipalType}
         size={size}
         presence={status ?? false}
         decorative
@@ -64,6 +73,16 @@ export function PersonCard({ id, person, name, presence = false, chat = true, si
       />
       <span className={cx('seed-person-card__body', classNames?.body)}>
         <span className={cx('seed-person-card__name', classNames?.name)}>{displayName}</span>
+        {app && (
+          <span className={cx('seed-person-card__detail', classNames?.detail)} data-field="servicePrincipalType">
+            {servicePrincipalLabel(data.servicePrincipalType)}
+          </span>
+        )}
+        {app && data.appId && (
+          <span className={cx('seed-person-card__detail', classNames?.detail)} data-field="appId">
+            App-ID {data.appId}
+          </span>
+        )}
         {data.jobTitle && (
           <span className={cx('seed-person-card__detail', classNames?.detail)} data-field="jobTitle">
             {data.jobTitle}

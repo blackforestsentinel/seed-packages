@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createLocalDirectory, DirectoryError } from './directory.js';
 import { createGraphClient } from './graph-client.js';
 import { createGraphDirectory, toPresence, type GraphDirectoryOptions } from './graph-directory.js';
-import { createFakeGraph, directoryConfig, memoryStorage, people, photoDataUrl, type FakeGraph } from './test/fake-graph.js';
+import { createFakeGraph, directoryConfig, memoryStorage, people, photoDataUrl, principals, type FakeGraph } from './test/fake-graph.js';
 import { avatarColor, AVATAR_COLORS, initials } from './utils.js';
 
 function directory(graph: FakeGraph, options: Partial<GraphDirectoryOptions> = {}) {
@@ -314,6 +314,128 @@ describe('createGraphDirectory', () => {
   });
 });
 
+describe('Service Principals', () => {
+  const spConfig = { ...directoryConfig, servicePrincipals: true };
+  const roleConfig = { ...spConfig, roleFilter: true, apiClientId: 'api-client-id' };
+
+  it('sucht mit principalTypes auch Service Principals, gefiltert nach Art, im selben $batch', async () => {
+    const graph = createFakeGraph();
+    const dir = directory(graph, { config: spConfig });
+
+    const result = await dir.search('er', { principalTypes: ['user', 'servicePrincipal'], servicePrincipalTypes: ['ManagedIdentity'] });
+
+    // Verzeichnis und Service Principals im Wechsel, damit Anwendungen nicht hinten herunterfallen.
+    expect(result.map((person) => person.displayName)).toEqual(['Erika Mustermann', 'Erfassung Nachtlauf', 'Eric Beispiel', 'Erna Platzhalter']);
+    expect(result[0]).toMatchObject({ kind: 'user' });
+    expect(result[1]).toEqual({
+      id: principals.nightly.id,
+      displayName: 'Erfassung Nachtlauf',
+      kind: 'servicePrincipal',
+      appId: principals.nightly.appId,
+      servicePrincipalType: 'ManagedIdentity',
+    });
+    expect(graph.requests).toHaveLength(1);
+    const call = graph.calls.find((entry) => entry.path.startsWith('/servicePrincipals?'))!;
+    expect(call.headers.consistencylevel).toBe('eventual');
+    expect(decodeURIComponent(call.path)).toContain(`$search="displayName:er"&$filter=servicePrincipalType in ('ManagedIdentity')&$count=true`);
+    expect(call.path).toContain('$select=id,displayName,appId,servicePrincipalType');
+    expect(dir.peekPerson(principals.nightly.id)?.kind).toBe('servicePrincipal');
+  });
+
+  it('sucht nur Service Principals, ohne /me/people und /users', async () => {
+    const graph = createFakeGraph();
+    const dir = directory(graph, { config: spConfig });
+
+    const result = await dir.search('erf', { principalTypes: ['servicePrincipal'] });
+
+    expect(result.map((person) => person.displayName)).toEqual(['Erfassung Nachtlauf', 'Erfassung Export']);
+    expect(graph.calls.map((call) => call.path.split('?')[0])).toEqual(['/servicePrincipals']);
+    expect(decodeURIComponent(graph.calls[0]!.path)).not.toContain('$filter');
+  });
+
+  it('zeigt Personen weiter, wenn nur die Suche nach Service Principals scheitert', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const graph = createFakeGraph();
+    graph.use((call) => (call.path.startsWith('/servicePrincipals?') ? { status: 403, body: { error: { code: 'Authorization_RequestDenied' } } } : undefined));
+    const dir = directory(graph, { config: spConfig });
+
+    const result = await dir.search('erika', { principalTypes: ['user', 'servicePrincipal'] });
+    expect(result.map((person) => person.displayName)).toEqual(['Erika Mustermann']);
+    expect(warn).toHaveBeenCalledOnce();
+
+    const error = await dir.search('erf', { principalTypes: ['servicePrincipal'] }).catch((e: unknown) => e);
+    expect(error).toMatchObject({ code: 'forbidden' });
+    expect((error as Error).message).toContain('Application.Read.All');
+  });
+
+  it('verlangt auth.directory.servicePrincipals für Suche und App-Rollen', async () => {
+    const graph = createFakeGraph({ appRoles: [] });
+    const dir = directory(graph, { config: { ...directoryConfig, roleFilter: true, apiClientId: 'api-client-id' } });
+
+    expect(dir.servicePrincipals).toBe(false);
+    await expect(dir.search('er', { principalTypes: ['user', 'servicePrincipal'] })).rejects.toMatchObject({ code: 'not-configured' });
+    await expect(dir.getAppRoleMembers(undefined, { principalTypes: ['servicePrincipal'] })).rejects.toMatchObject({ code: 'not-configured' });
+    expect(graph.requests).toHaveLength(0);
+  });
+
+  it('erkennt Service Principals über /servicePrincipals/{id} und lädt für sie weder Foto noch Status', async () => {
+    const graph = createFakeGraph({ presence: { [principals.nightly.id]: { availability: 'Available', activity: 'Available' } } });
+    const dir = directory(graph, { config: spConfig });
+
+    const principal = await dir.getPerson(principals.nightly.id);
+
+    expect(principal).toMatchObject({ kind: 'servicePrincipal', displayName: 'Erfassung Nachtlauf', servicePrincipalType: 'ManagedIdentity' });
+    expect(graph.calls.map((call) => call.path.split('?')[0])).toEqual([`/users/${principals.nightly.id}`, `/servicePrincipals/${principals.nightly.id}`]);
+    expect((await dir.getPerson(people.erika.id))?.kind).toBe('user');
+
+    const before = graph.requests.length;
+    expect(await dir.getPhoto(principals.nightly.id, 48)).toBeNull();
+    const stop = dir.subscribePresence(principals.nightly.id, () => {});
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    stop();
+    expect(graph.requests).toHaveLength(before);
+  });
+
+  it('fragt ohne auth.directory.servicePrincipals nur /users/{id}', async () => {
+    const graph = createFakeGraph();
+    const dir = directory(graph);
+
+    expect(await dir.getPerson(principals.nightly.id)).toBeNull();
+    expect(graph.calls.map((call) => call.path.split('?')[0])).toEqual([`/users/${principals.nightly.id}`]);
+  });
+
+  it('liefert auf Wunsch Service Principals mit App-Rolle, ohne Wunsch nur Personen', async () => {
+    const graph = createFakeGraph({
+      appRoles: [
+        { id: 'role-writer', value: 'Writer' },
+        { id: 'role-reader', value: 'Reader' },
+      ],
+      assignments: [
+        { principalId: people.erika.id, principalType: 'User', principalDisplayName: 'Erika Mustermann', appRoleId: 'role-writer' },
+        { principalId: principals.nightly.id, principalType: 'ServicePrincipal', principalDisplayName: 'Erfassung Nachtlauf', appRoleId: 'role-writer' },
+        { principalId: principals.export.id, principalType: 'ServicePrincipal', principalDisplayName: 'Erfassung Export', appRoleId: 'role-reader' },
+        { principalId: 'group-1', principalType: 'Group', principalDisplayName: 'Einkauf', appRoleId: 'role-writer' },
+      ],
+      groups: { 'group-1': [people.erna] },
+    });
+    const dir = directory(graph, { config: roleConfig });
+
+    const users = await dir.getAppRoleMembers(['Writer']);
+    const both = await dir.getAppRoleMembers(['Writer'], { principalTypes: ['user', 'servicePrincipal'] });
+    const groupCalls = () => graph.calls.filter((call) => call.path.startsWith('/groups/')).length;
+    const before = groupCalls();
+    const apps = await dir.getAppRoleMembers(undefined, { principalTypes: ['servicePrincipal'] });
+
+    expect(users.map((person) => person.displayName)).toEqual(['Erika Mustermann', 'Erna Platzhalter']);
+    expect(both.map((person) => person.displayName)).toEqual(['Erfassung Nachtlauf', 'Erika Mustermann', 'Erna Platzhalter']);
+    expect(both[0]).toMatchObject({ kind: 'servicePrincipal', appId: principals.nightly.appId, servicePrincipalType: 'ManagedIdentity' });
+    expect(apps.map((person) => person.displayName)).toEqual(['Erfassung Export', 'Erfassung Nachtlauf']);
+    // Nur Service Principals: Gruppen bleiben unaufgelöst.
+    expect(groupCalls()).toBe(before);
+    expect(dir.peekPerson(principals.export.id)?.kind).toBe('servicePrincipal');
+  });
+});
+
 describe('createLocalDirectory', () => {
   it('sucht in der Liste und filtert nach Rollen, ohne Fotos und Status', async () => {
     const dir = createLocalDirectory([
@@ -330,5 +452,21 @@ describe('createLocalDirectory', () => {
     expect((await dir.getAppRoleMembers()).map((person) => person.id)).toEqual(['a', 'c']);
     expect(await dir.getPhoto('a', 48)).toBeNull();
     expect(dir.presence).toBe(false);
+  });
+
+  it('kennt Anwendungen mit kind servicePrincipal', async () => {
+    const dir = createLocalDirectory([
+      { id: 'a', displayName: 'Erika Mustermann', roles: ['Writer'] },
+      { id: 'm', displayName: 'Erfassung Nachtlauf', kind: 'servicePrincipal', servicePrincipalType: 'ManagedIdentity', appId: 'app-m', roles: ['Writer'] },
+      { id: 'x', displayName: 'Erfassung Export', kind: 'servicePrincipal', servicePrincipalType: 'Application', roles: ['Writer'] },
+    ]);
+
+    expect((await dir.search('er')).map((person) => person.id)).toEqual(['a']);
+    expect((await dir.search('er', { principalTypes: ['user', 'servicePrincipal'] })).map((person) => person.id)).toEqual(['a', 'm', 'x']);
+    expect((await dir.search('er', { principalTypes: ['servicePrincipal'], servicePrincipalTypes: ['ManagedIdentity'] })).map((person) => person.id)).toEqual(['m']);
+    expect(await dir.getPerson('m')).toEqual({ id: 'm', displayName: 'Erfassung Nachtlauf', kind: 'servicePrincipal', appId: 'app-m', servicePrincipalType: 'ManagedIdentity' });
+    expect((await dir.getAppRoleMembers(['Writer'])).map((person) => person.id)).toEqual(['a']);
+    expect((await dir.getAppRoleMembers(['Writer'], { principalTypes: ['servicePrincipal'] })).map((person) => person.id)).toEqual(['m', 'x']);
+    expect(dir.servicePrincipals).toBe(true);
   });
 });

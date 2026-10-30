@@ -1,7 +1,8 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { usePerson, usePresence } from '../hooks.js';
+import { resolvePrincipalKind, usePerson, usePresence } from '../hooks.js';
+import { useDirectory } from '../provider.js';
 import type { Person } from '../types.js';
-import { cx, PRESENCE_LABELS } from '../utils.js';
+import { cx, PRESENCE_LABELS, servicePrincipalLabel } from '../utils.js';
 import { Avatar } from './Avatar.js';
 import { PersonCard } from './PersonCard.js';
 
@@ -10,15 +11,15 @@ export interface PersonLabelProps {
   id?: string | null;
   /** Anzeigename; ohne ihn kommt er aus dem Verzeichnis. Ohne Verzeichnis zeigt das Label genau diesen. */
   name?: string | null;
-  /** Bekannte Daten, etwa aus dem PeoplePicker. */
+  /** Bekannte Daten, etwa aus dem PeoplePicker; mit kind entfällt die Abfrage der Art. */
   person?: Partial<Person> | null;
   /** Zweite Zeile, z. B. ein Zeitpunkt oder die Rolle. */
   secondary?: ReactNode;
-  /** Zweite Zeile aus dem Profil, wenn secondary fehlt. */
+  /** Zweite Zeile aus dem Profil, wenn secondary fehlt; bei Anwendungen deren Art. */
   secondaryField?: 'mail' | 'jobTitle' | 'department';
   /** Avatar-Größe; Default 24, mit zweiter Zeile 32. */
   size?: number;
-  /** Teams-Status am Avatar. */
+  /** Teams-Status am Avatar; nur für Personen. */
   presence?: boolean;
   /** PersonCard beim Überfahren und per Tastatur. */
   card?: boolean;
@@ -26,7 +27,10 @@ export interface PersonLabelProps {
   classNames?: { avatar?: string; text?: string; name?: string; secondary?: string; card?: string };
 }
 
-/** Avatar, Name und optional eine zweite Zeile, etwa für „Freigegeben von“ in Tabellen. */
+/**
+ * Avatar, Name und optional eine zweite Zeile, etwa für „Freigegeben von“ in Tabellen. Erkennt mit
+ * auth.directory.servicePrincipals auch Anwendungen und verwaltete Identitäten.
+ */
 export function PersonLabel({
   id,
   name,
@@ -39,12 +43,16 @@ export function PersonLabel({
   className,
   classNames,
 }: PersonLabelProps) {
-  const needsProfile = !name || (secondary === undefined && !!secondaryField && !person?.[secondaryField]);
+  const directory = useDirectory();
+  const resolving = !person?.kind && !!id && directory.servicePrincipals === true;
+  const needsProfile = !name || resolving || (secondary === undefined && !!secondaryField && !person?.[secondaryField]);
   const loaded = usePerson(needsProfile ? id : null);
-  const live = usePresence(presence ? id : null);
+  const kind = resolvePrincipalKind(person?.kind, loaded, resolving);
+  const live = usePresence(presence && kind === 'user' ? id : null);
   const data: Partial<Person> = { ...person, ...loaded.person };
+  const app = kind === 'servicePrincipal';
   const displayName = name || person?.displayName || loaded.person?.displayName || (loaded.status === 'loading' ? '' : 'Unbekannte Person');
-  const second = secondary ?? (secondaryField ? data[secondaryField] : null);
+  const second = secondary ?? (secondaryField ? data[secondaryField] || (app ? servicePrincipalLabel(data.servicePrincipalType) : null) : null);
   const status = live.presence?.status ?? null;
 
   const content = (
@@ -52,6 +60,8 @@ export function PersonLabel({
       <Avatar
         id={id}
         name={displayName || null}
+        kind={kind}
+        servicePrincipalType={data.servicePrincipalType}
         size={size ?? (second ? 32 : 24)}
         presence={status ?? false}
         decorative
@@ -76,7 +86,12 @@ export function PersonLabel({
     );
   }
   return (
-    <HoverCard className={className} state={state} cardClassName={classNames?.card} card={<PersonCard id={id} person={person} name={name} presence={presence} />}>
+    <HoverCard
+      className={className}
+      state={state}
+      cardClassName={classNames?.card}
+      card={<PersonCard id={id} person={person} name={name} presence={presence && !app} />}
+    >
       {content}
     </HoverCard>
   );

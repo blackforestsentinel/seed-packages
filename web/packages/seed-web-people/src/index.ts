@@ -37,11 +37,29 @@ export type {
 
 // Verzeichnis ohne React
 export { createEmptyDirectory, createLocalDirectory, DirectoryError, matchesSearch, photoSizeFor } from './directory.js';
-export type { Directory, SearchOptions } from './directory.js';
+export type { AppRoleMembersOptions, Directory, SearchOptions } from './directory.js';
 export { createGraphDirectory, toPresence } from './graph-directory.js';
 export type { DirectoryTtl, GraphDirectoryOptions } from './graph-directory.js';
 export { GraphError } from './graph-client.js';
-export { AVATAR_COLORS, avatarColor, initials, PRESENCE_LABELS, teamsChatUrl } from './utils.js';
+export {
+  AVATAR_COLORS,
+  avatarColor,
+  initials,
+  isServicePrincipal,
+  PRESENCE_LABELS,
+  SERVICE_PRINCIPAL_TYPE_LABELS,
+  servicePrincipalLabel,
+  teamsChatUrl,
+} from './utils.js';
 export type { AvatarColor } from './utils.js';
-export type { DirectoryMode, LoadStatus, Person, PhotoSize, Presence, PresenceStatus } from './types.js';
+export type {
+  DirectoryMode,
+  LoadStatus,
+  Person,
+  PhotoSize,
+  Presence,
+  PresenceStatus,
+  PrincipalKind,
+  ServicePrincipalType,
+} from './types.js';
 export type { SeedDirectoryConfig, SeedLocalDirectoryConfig, SeedLocalPerson } from '@blackforestsentinel/seed-web-auth';

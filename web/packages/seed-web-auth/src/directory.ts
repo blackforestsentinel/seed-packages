@@ -17,17 +17,28 @@ export interface SeedDirectoryConfig {
    * mit Admin-Consent.
    */
   roleFilter?: boolean;
+  /**
+   * Service Principals (Anwendungen, verwaltete Identitäten) suchen und anzeigen. Braucht
+   * Application.Read.All mit Admin-Consent.
+   */
+  servicePrincipals?: boolean;
   /** Client-ID der API-Registrierung; deren App-Rollen nennt der Filter. */
   apiClientId?: string;
 }
 
-/** Erfundene Person für den lokalen Modus. */
+/** Erfundene Person oder Anwendung für den lokalen Modus. */
 export interface SeedLocalPerson {
   id: string;
   displayName: string;
+  /** user (Default) oder servicePrincipal für eine Anwendung oder verwaltete Identität. */
+  kind?: 'user' | 'servicePrincipal';
   mail?: string;
   jobTitle?: string;
   department?: string;
+  /** Nur Service Principals: Client-ID der Anwendung. */
+  appId?: string;
+  /** Nur Service Principals: ManagedIdentity oder Application. */
+  servicePrincipalType?: string;
   /** App-Rollen (Werte wie in project.yaml) für den Personenfilter nach Rolle. */
   roles?: string[];
 }

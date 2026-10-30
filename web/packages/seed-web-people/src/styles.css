@@ -597,6 +597,12 @@
     color: var(--seed-avatar-neutral-fg);
   }
 
+  /* Anwendungen und verwaltete Identitäten: Symbol auf der Farbe aus der ID. */
+  .seed-avatar[data-kind='servicePrincipal'] > .seed-avatar__icon {
+    background: var(--seed-avatar-bg);
+    color: var(--seed-avatar-fg);
+  }
+
   .seed-avatar[data-state='loading'] {
     background: var(--seed-avatar-placeholder);
     animation: seed-pulse 1.6s ease-in-out infinite;

@@ -1,13 +1,31 @@
-/** Person aus dem Verzeichnis (Microsoft Graph oder lokale Liste). */
+/** Art des Eintrags: Benutzerkonto oder Service Principal (Anwendung, verwaltete Identität). */
+export type PrincipalKind = 'user' | 'servicePrincipal';
+
+/**
+ * servicePrincipalType aus Entra ID. Gebräuchlich sind ManagedIdentity und Application; Graph
+ * kennt außerdem Legacy und SocialIdp.
+ */
+export type ServicePrincipalType = 'ManagedIdentity' | 'Application' | 'Legacy' | 'SocialIdp' | (string & {});
+
+/**
+ * Person aus dem Verzeichnis (Microsoft Graph oder lokale Liste), mit auth.directory.servicePrincipals
+ * auch eine Anwendung oder verwaltete Identität.
+ */
 export interface Person {
   /** Objekt-ID in Entra ID, lokal die ID aus config.json. */
   id: string;
   displayName: string;
+  /** Das Verzeichnis setzt es immer; fehlt es, etwa in gespeicherten Daten, gilt user. */
+  kind?: PrincipalKind;
   mail?: string | null;
   userPrincipalName?: string | null;
   jobTitle?: string | null;
   department?: string | null;
   officeLocation?: string | null;
+  /** Nur Service Principals: Client-ID der Anwendung. */
+  appId?: string | null;
+  /** Nur Service Principals. */
+  servicePrincipalType?: ServicePrincipalType | null;
 }
 
 /** Teams-Status, angelehnt an die Status von Fluent. */

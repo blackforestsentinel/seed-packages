@@ -69,12 +69,13 @@ const token = await auth.getAccessToken(['https://graph.microsoft.com/User.ReadB
     "scopes": ["https://graph.microsoft.com/User.Read", "https://graph.microsoft.com/User.ReadBasic.All", "https://graph.microsoft.com/People.Read", "https://graph.microsoft.com/Presence.Read.All"],
     "presence": true,
     "roleFilter": false,
+    "servicePrincipals": false,
     "apiClientId": "<Client-ID der API-Registrierung>"
   }
 }
 ```
 
-Im lokalen Modus gibt es keinen Graph-Zugriff; `auth.directory.people` enthält dort erfundene Personen (Typ `SeedLocalDirectoryConfig`).
+Im lokalen Modus gibt es keinen Graph-Zugriff; `auth.directory.people` enthält dort erfundene Personen und Anwendungen (Typ `SeedLocalDirectoryConfig`).
 
 ## Browser-Erweiterungen
 

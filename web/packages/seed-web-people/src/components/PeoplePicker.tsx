@@ -1,9 +1,9 @@
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
-import { matchesSearch } from '../directory.js';
+import { matchesSearch, principalTypesOf } from '../directory.js';
 import { useAppRoleMembers, usePeopleSearch } from '../hooks.js';
 import { useDirectory } from '../provider.js';
-import type { Person } from '../types.js';
-import { cx } from '../utils.js';
+import type { Person, PrincipalKind, ServicePrincipalType } from '../types.js';
+import { cx, servicePrincipalLabel } from '../utils.js';
 import { Avatar } from './Avatar.js';
 import { DismissIcon } from './icons.js';
 
@@ -17,6 +17,7 @@ export interface PeoplePickerLabels {
   notConfigured: string;
   roleFilterNotConfigured: string;
   roleFilterFailed: string;
+  servicePrincipalsNotConfigured: string;
   tooShort: (minChars: number) => string;
   results: (count: number) => string;
   remove: (name: string) => string;
@@ -31,10 +32,15 @@ const DEFAULT_LABELS: PeoplePickerLabels = {
   notConfigured: 'Die Personensuche ist nicht eingerichtet.',
   roleFilterNotConfigured: 'Der Filter nach App-Rolle ist nicht eingerichtet (auth.directory.roleFilter in config.json).',
   roleFilterFailed: 'Die Personen mit App-Rolle ließen sich nicht laden.',
+  servicePrincipalsNotConfigured: 'Die Suche nach Anwendungen ist nicht eingerichtet (auth.directory.servicePrincipals in config.json).',
   tooShort: (minChars) => `Mindestens ${minChars} Zeichen eingeben`,
   results: (count) => (count === 1 ? '1 Vorschlag' : `${count} Vorschläge`),
   remove: (name) => `${name} entfernen`,
 };
+
+// Andere Vorgaben für Suchfeld und Platzhalter, wenn der Picker auch Anwendungen findet.
+const MIXED_LABELS: Partial<PeoplePickerLabels> = { input: 'Person oder Anwendung suchen', placeholder: 'Name, Mail-Adresse oder Anwendung' };
+const APP_LABELS: Partial<PeoplePickerLabels> = { input: 'Anwendung suchen', placeholder: 'Name der Anwendung' };
 
 export interface PeoplePickerOptionState {
   active: boolean;
@@ -70,6 +76,13 @@ export interface PeoplePickerProps {
   onlyWithAppRole?: boolean;
   /** Mit onlyWithAppRole: nur diese Rollen (Werte aus project.yaml), sonst jede. */
   roles?: string[];
+  /**
+   * Was der Picker findet: Default ['user']; mit 'servicePrincipal' auch Anwendungen und verwaltete
+   * Identitäten. Braucht auth.directory.servicePrincipals; ohne zeigt der Picker einen Fehler.
+   */
+  principalTypes?: PrincipalKind[];
+  /** Nur diese Arten von Service Principals, etwa ['ManagedIdentity']; Default alle. */
+  servicePrincipalTypes?: ServicePrincipalType[];
   labels?: Partial<PeoplePickerLabels>;
   className?: string;
   classNames?: {
@@ -84,7 +97,16 @@ export interface PeoplePickerProps {
   };
 }
 
-type Phase = 'idle' | 'too-short' | 'loading' | 'ready' | 'empty' | 'error' | 'not-configured' | 'role-filter-missing';
+type Phase =
+  | 'idle'
+  | 'too-short'
+  | 'loading'
+  | 'ready'
+  | 'empty'
+  | 'error'
+  | 'not-configured'
+  | 'role-filter-missing'
+  | 'service-principals-missing';
 
 /**
  * Personenauswahl nach dem ARIA-Muster „Combobox“: Suche ab zwei Zeichen mit Verzögerung, Vorschläge
@@ -107,11 +129,16 @@ export function PeoplePicker({
   renderOption,
   onlyWithAppRole = false,
   roles,
+  principalTypes,
+  servicePrincipalTypes,
   labels: labelOverrides,
   className,
   classNames,
 }: PeoplePickerProps) {
-  const labels = { ...DEFAULT_LABELS, ...labelOverrides };
+  const types = principalTypesOf({ principalTypes });
+  const wantsApps = types.includes('servicePrincipal');
+  const wantsUsers = types.includes('user');
+  const labels = { ...DEFAULT_LABELS, ...(wantsApps ? (wantsUsers ? MIXED_LABELS : APP_LABELS) : {}), ...labelOverrides };
   const directory = useDirectory();
   const [internal, setInternal] = useState<Person[]>(defaultValue ?? []);
   const selected = value ?? internal;
@@ -133,14 +160,25 @@ export function PeoplePicker({
       );
     }
   }, [roleFilterMissing]);
+  const appsMissing = wantsApps && !directory.servicePrincipals;
+  useEffect(() => {
+    if (appsMissing) {
+      console.error(
+        "PeoplePicker: principalTypes mit 'servicePrincipal' braucht auth.directory.servicePrincipals: true in config.json (project.yaml: auth.directory mit servicePrincipals). Ohne zeigt der Picker niemanden.",
+      );
+    }
+  }, [appsMissing]);
+  const blocked = roleFilterMissing || appsMissing;
 
   const search = usePeopleSearch(text, {
     minChars,
     debounceMs,
     top: onlyWithAppRole ? 25 : Math.max(10, maxSuggestions),
-    enabled: !roleFilterMissing,
+    enabled: !blocked,
+    principalTypes: types,
+    servicePrincipalTypes,
   });
-  const members = useAppRoleMembers(roles, { enabled: onlyWithAppRole && !roleFilterMissing });
+  const members = useAppRoleMembers(roles, { enabled: onlyWithAppRole && !blocked, principalTypes: types });
 
   useEffect(() => {
     if (members.status === 'error') {
@@ -179,6 +217,8 @@ export function PeoplePicker({
   let phase: Phase;
   if (roleFilterMissing) {
     phase = 'role-filter-missing';
+  } else if (appsMissing) {
+    phase = 'service-principals-missing';
   } else if (directory.mode === 'off') {
     phase = trimmed ? 'not-configured' : 'idle';
   } else if (!trimmed) {
@@ -202,6 +242,7 @@ export function PeoplePicker({
     error: onlyWithAppRole && members.status === 'error' ? labels.roleFilterFailed : labels.error,
     'not-configured': labels.notConfigured,
     'role-filter-missing': labels.roleFilterNotConfigured,
+    'service-principals-missing': labels.servicePrincipalsNotConfigured,
   };
   const popupVisible = open && !disabled && phase !== 'idle';
 
@@ -266,7 +307,8 @@ export function PeoplePicker({
     }
   }
 
-  const state = phase === 'error' || phase === 'role-filter-missing' ? 'error' : phase === 'loading' ? 'loading' : 'ready';
+  const state =
+    phase === 'error' || phase === 'role-filter-missing' || phase === 'service-principals-missing' ? 'error' : phase === 'loading' ? 'loading' : 'ready';
 
   return (
     <div
@@ -292,7 +334,15 @@ export function PeoplePicker({
       >
         {selected.map((person) => (
           <span key={person.id} className={cx('seed-picker__chip', classNames?.chip)}>
-            <Avatar id={person.id} name={person.displayName} size={20} decorative className="seed-picker__chip-avatar" />
+            <Avatar
+              id={person.id}
+              name={person.displayName}
+              kind={person.kind}
+              servicePrincipalType={person.servicePrincipalType}
+              size={20}
+              decorative
+              className="seed-picker__chip-avatar"
+            />
             <span className="seed-picker__chip-name">{person.displayName}</span>
             {!disabled && (
               <button
@@ -367,10 +417,13 @@ export function PeoplePicker({
 }
 
 function DefaultOption({ person }: { person: Person }) {
-  const details = [person.jobTitle, person.department].filter(Boolean).join(' · ') || person.mail || person.userPrincipalName;
+  const details =
+    person.kind === 'servicePrincipal'
+      ? [servicePrincipalLabel(person.servicePrincipalType), person.appId].filter(Boolean).join(' · ')
+      : [person.jobTitle, person.department].filter(Boolean).join(' · ') || person.mail || person.userPrincipalName;
   return (
     <span className="seed-picker__option-content">
-      <Avatar id={person.id} name={person.displayName} size={32} decorative />
+      <Avatar id={person.id} name={person.displayName} kind={person.kind} servicePrincipalType={person.servicePrincipalType} size={32} decorative />
       <span className="seed-picker__option-text">
         <span className="seed-picker__option-name">{person.displayName}</span>
         {details && <span className="seed-picker__option-secondary">{details}</span>}

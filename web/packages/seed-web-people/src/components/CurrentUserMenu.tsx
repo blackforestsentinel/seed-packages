@@ -177,6 +177,7 @@ export function CurrentUserMenu({
       <Avatar
         id={user.id}
         name={user.displayName}
+        kind="user"
         size={size}
         presence={presence}
         decorative

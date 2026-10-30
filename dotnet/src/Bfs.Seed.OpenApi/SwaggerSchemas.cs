@@ -109,6 +109,11 @@ internal sealed class SwaggerSchemas(JsonSerializerOptions serializerOptions, Li
             schema["description"] = description;
         }
 
+        if (DynamicValuesAttribute(context.PropertyInfo) is { } dynamicValues)
+        {
+            schema[DynamicValues.Key] = DynamicValues.Extension(dynamicValues, $"{context.PropertyInfo!.DeclaringType.Name}.{context.PropertyInfo.Name}");
+        }
+
         if (context.PropertyInfo is null && context.TypeInfo.Kind == JsonTypeInfoKind.Object)
         {
             RemoveNullablesFromRequired(schema, context.TypeInfo);
@@ -130,6 +135,23 @@ internal sealed class SwaggerSchemas(JsonSerializerOptions serializerOptions, Li
             ?? (context.Path.Length == 0 ? DescriptionAttribute(context.TypeInfo.Type) : null)
             ?? (property?.AttributeProvider is MemberInfo member ? documentation.Summary(member) : null)
             ?? (parameter is not null ? documentation.Parameter(parameter) : null);
+    }
+
+    /// <summary><see cref="OpenApiDynamicValuesAttribute"/> an der Eigenschaft, höchstens eines und ohne Parameternamen.</summary>
+    private static OpenApiDynamicValuesAttribute? DynamicValuesAttribute(JsonPropertyInfo? property)
+    {
+        var attributes = property?.AttributeProvider?.GetCustomAttributes(typeof(OpenApiDynamicValuesAttribute), true) ?? [];
+        if (attributes is not [OpenApiDynamicValuesAttribute attribute, ..])
+        {
+            return null;
+        }
+
+        if (attributes.Length > 1 || attribute.Parameter is not null)
+        {
+            throw new SeedOpenApiException(SeedOpenApiCodes.DynamicValuesAttribute, $"{property!.DeclaringType.Name}.{property.Name}: an einer Eigenschaft gibt es [OpenApiDynamicValues] nur einmal und ohne Parameternamen, etwa [property: OpenApiDynamicValues(\"{attribute.OperationId}\")]");
+        }
+
+        return attribute;
     }
 
     /// <summary>

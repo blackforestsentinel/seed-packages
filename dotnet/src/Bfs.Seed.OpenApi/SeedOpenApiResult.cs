@@ -53,7 +53,10 @@ internal static class SeedOpenApiCodes
     public const string DefinitionName = "SEEDOPENAPI010";
     public const string TooLarge = "SEEDOPENAPI011";
     public const string FunctionKey = "SEEDOPENAPI012";
+    public const string DynamicValuesMismatch = "SEEDOPENAPI013";
 
     public const string DuplicateOperationId = "SEEDOPENAPI100";
     public const string DuplicateOperation = "SEEDOPENAPI101";
+    public const string DynamicValuesOperation = "SEEDOPENAPI102";
+    public const string DynamicValuesAttribute = "SEEDOPENAPI103";
 }

@@ -99,6 +99,47 @@ public sealed class OpenApiParameterAttribute(string name) : Attribute
     public OpenApiVisibility Visibility { get; set; }
 }
 
+/// <summary>
+/// Auswahlliste statt freier Eingabe (<c>x-ms-dynamic-values</c>): Power Automate und Copilot Studio
+/// zeigen die Werte, die eine andere Operation liefert. An der Function für einen Pfad- oder
+/// Query-Parameter, an der Eigenschaft eines Body-Typs für dieses Feld (bei Records
+/// <c>[property: OpenApiDynamicValues(…)]</c>). Pfade mit <c>/</c> getrennt, ohne führenden <c>/</c>.
+/// </summary>
+[AttributeUsage(AttributeTargets.Method | AttributeTargets.Property | AttributeTargets.Field, AllowMultiple = true)]
+public sealed class OpenApiDynamicValuesAttribute : Attribute
+{
+    /// <summary>An der Eigenschaft eines Body-Typs: Werte aus der Operation <paramref name="operationId"/>.</summary>
+    public OpenApiDynamicValuesAttribute(string operationId) => OperationId = operationId;
+
+    /// <summary>An der Function: Werte für den Parameter <paramref name="parameter"/> aus der Operation <paramref name="operationId"/>.</summary>
+    public OpenApiDynamicValuesAttribute(string parameter, string operationId) => (Parameter, OperationId) = (parameter, operationId);
+
+    /// <summary>Name des Parameters wie in Route oder <see cref="OpenApiParameterAttribute"/>; an Eigenschaften null.</summary>
+    public string? Parameter { get; }
+
+    /// <summary>
+    /// operationId der Operation, die die Werte liefert; nimmt deren Function mehrere Methoden an,
+    /// mit angehängter Methode (<c>ItemGet</c>). Sie muss im Dokument stehen, am besten mit
+    /// <see cref="OpenApiVisibility.Internal"/>.
+    /// </summary>
+    public string OperationId { get; }
+
+    /// <summary>Pfad zum Wert in einem Element der Liste, etwa <c>id</c> (<c>value-path</c>).</summary>
+    public string? ValuePath { get; set; }
+
+    /// <summary>Pfad zum angezeigten Text in einem Element der Liste, etwa <c>name</c> (<c>value-title</c>).</summary>
+    public string? ValueTitle { get; set; }
+
+    /// <summary>Pfad zur Liste in der Antwort, etwa <c>items</c>; ohne Angabe ist die Antwort die Liste (<c>value-collection</c>).</summary>
+    public string? ValueCollection { get; set; }
+
+    /// <summary>
+    /// Parameter für den Aufruf der Operation: <c>name=wert</c> mit festem Wert, <c>name={anderer}</c>
+    /// mit dem Wert des Parameters <c>anderer</c> der Operation, in der die Auswahl steht.
+    /// </summary>
+    public string[] Parameters { get; set; } = [];
+}
+
 /// <summary>Nimmt eine HTTP-Function oder alle einer Klasse aus openapi.json heraus.</summary>
 [AttributeUsage(AttributeTargets.Class | AttributeTargets.Method)]
 public sealed class OpenApiIgnoreAttribute : Attribute;

@@ -9,7 +9,7 @@ public class SchemaTests
     public void Definitions_ForAllObjectTypesSorted()
     {
         Assert.Equal(
-            ["Address", "ApiError", "Category", "CreateOrderRequest", "Customer", "HealthReport", "Order", "OrderLine", "PageOfOrder", "SeedRoleDetail", "SeedUserInfo"],
+            ["Address", "ApiError", "Category", "CreateOrderRequest", "Customer", "HealthReport", "Order", "OrderLine", "PageOfCustomer", "PageOfOrder", "SeedRoleDetail", "SeedUserInfo"],
             App.Document["definitions"]!.AsObject().Select(d => d.Key));
     }
 

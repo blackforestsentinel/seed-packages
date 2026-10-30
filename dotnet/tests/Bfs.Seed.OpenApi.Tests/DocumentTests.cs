@@ -13,6 +13,7 @@ public class DocumentTests
             [
                 "/archive/{year} get ListArchive",
                 "/categories get ListCategories",
+                "/customers get ListCustomers",
                 "/health get GetHealth",
                 "/me get GetMe",
                 "/orders get ListOrders",
@@ -82,7 +83,9 @@ public class DocumentTests
         Assert.Equal(
             """{"name":"state","in":"query","required":false,"x-ms-visibility":"advanced","type":"string","enum":["Open","Shipped","Cancelled"]}""",
             operation.Parameter("state").ToJsonString());
-        Assert.Equal("""{"name":"customer","in":"query","required":true,"type":"string"}""", operation.Parameter("customer").ToJsonString());
+        Assert.Equal(
+            """{"name":"customer","in":"query","required":true,"type":"string","x-ms-dynamic-values":{"operationId":"ListCustomers","value-path":"name","value-title":"name","value-collection":"items","parameters":{"active":"true"}}}""",
+            operation.Parameter("customer").ToJsonString());
     }
 
     [Fact]

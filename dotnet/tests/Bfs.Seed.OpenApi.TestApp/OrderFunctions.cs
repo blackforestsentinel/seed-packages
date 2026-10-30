@@ -13,6 +13,7 @@ public sealed class OrderFunctions
     [OpenApiParameter("top", Type = typeof(int), Description = "Höchstens so viele", Summary = "Anzahl")]
     [OpenApiParameter("state", Type = typeof(OrderState), Visibility = OpenApiVisibility.Advanced)]
     [OpenApiParameter("customer", Required = true)]
+    [OpenApiDynamicValues("customer", "ListCustomers", ValuePath = "name", ValueTitle = "name", ValueCollection = "items", Parameters = ["active=true"])]
     [OpenApiResponse(200, typeof(IReadOnlyList<Order>))]
     public static IActionResult List(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "orders")] HttpRequest request) => new OkResult();
@@ -61,6 +62,14 @@ public sealed class OrderFunctions
     [OpenApiResponse(200, typeof(Category))]
     public static IActionResult Categories(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "categories")] HttpRequest request) => new OkResult();
+
+    // Quelle der Auswahllisten für Kunden (ListOrders, CreateOrderRequest); im Connector unsichtbar.
+    [Function("ListCustomers")]
+    [OpenApiOperation("ListCustomers", "Kunden auflisten", Visibility = OpenApiVisibility.Internal)]
+    [OpenApiParameter("active", Type = typeof(bool))]
+    [OpenApiResponse(200, typeof(Page<Customer>))]
+    public static IActionResult Customers(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "customers")] HttpRequest request) => new OkResult();
 
     [Function("Hidden")]
     [OpenApiIgnore]

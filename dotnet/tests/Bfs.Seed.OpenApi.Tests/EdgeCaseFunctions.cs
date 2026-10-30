@@ -111,6 +111,137 @@ public sealed class DuplicateRouteFunctions
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "same/{id:int}")] HttpRequest request) => new OkResult();
 }
 
+// x-ms-dynamic-values: Quellen, Nutzer, Abweichungen und falsch verwendete Attribute.
+
+public sealed class DynamicValuesSourceFunctions
+{
+    // Zwei Methoden: operationId ProcessesGet und ProcessesPost; Pfad- und Pflichtparameter.
+    [Function("Processes")]
+    [OpenApiOperation("Processes", "Prozesse auflisten", Visibility = OpenApiVisibility.Internal)]
+    [OpenApiParameter("mode", Required = true)]
+    [OpenApiResponse(200, typeof(IReadOnlyList<ProcessInfo>))]
+    public static IActionResult Processes(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", "post", Route = "projects/{projectId}/processes")] HttpRequest request) => new OkResult();
+
+    [Function("ListWritableProcesses")]
+    [OpenApiOperation("ListWritableProcesses", "Beschreibbare Prozesse", Visibility = OpenApiVisibility.Internal)]
+    [OpenApiResponse(200, typeof(ProcessPage))]
+    public static IActionResult Writable(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "processes/writable")] HttpRequest request) => new OkResult();
+}
+
+public sealed class DynamicValuesFunctions
+{
+    [Function("CreateTask")]
+    [OpenApiOperation("CreateTask", "Aufgabe anlegen")]
+    [OpenApiParameter("processId", Required = true)]
+    [OpenApiDynamicValues("processId", "ProcessesGet", ValuePath = "id", ValueTitle = "title", Parameters = ["projectId={projectId}", " mode = write "])]
+    [OpenApiRequestBody(typeof(TaskRequest))]
+    [OpenApiResponse(204)]
+    public static IActionResult CreateTask(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "projects/{projectId}/tasks")] HttpRequest request) => new OkResult();
+
+    [Function("GetProcess")]
+    [OpenApiOperation("GetProcess", "Prozess abrufen")]
+    [OpenApiDynamicValues("processId", "ListWritableProcesses", ValuePath = "id", ValueTitle = "title", ValueCollection = "value")]
+    [OpenApiResponse(200, typeof(ProcessInfo))]
+    public static IActionResult GetProcess(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "processes/{processId}")] HttpRequest request) => new OkResult();
+}
+
+public sealed class DynamicValuesMismatchFunctions
+{
+    [Function("Mismatch")]
+    [OpenApiOperation("Mismatch", "Passt nicht")]
+    [OpenApiParameter("a")]
+    [OpenApiParameter("b")]
+    [OpenApiParameter("c")]
+    [OpenApiParameter("d")]
+    [OpenApiDynamicValues("a", "ProcessesGet", ValuePath = "id", ValueCollection = "items", Parameters = ["projectId={project}", "limit=5"])]
+    [OpenApiDynamicValues("b", "ProcessesGet", ValuePath = "key", ValueTitle = "title/text", Parameters = ["projectId=1", "mode=read"])]
+    [OpenApiDynamicValues("c", "ListWritableProcesses", ValuePath = "id")]
+    [OpenApiDynamicValues("d", "ListWritableProcesses", ValueCollection = "value")]
+    [OpenApiResponse(204)]
+    public static IActionResult Run(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "mismatch")] HttpRequest request) => new OkResult();
+}
+
+public sealed class DynamicValuesUnknownFunctions
+{
+    // Die Function nimmt zwei Methoden an; gemeint ist ProcessesGet.
+    [Function("Pick")]
+    [OpenApiOperation("Pick", "Prozess wählen")]
+    [OpenApiParameter("processId")]
+    [OpenApiDynamicValues("processId", "Processes", ValuePath = "id", ValueTitle = "title")]
+    [OpenApiResponse(204)]
+    public static IActionResult Run(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "pick")] HttpRequest request) => new OkResult();
+}
+
+public sealed class DynamicValuesUnknownInBodyFunctions
+{
+    [Function("Assign")]
+    [OpenApiOperation("Assign", "Prozess zuordnen")]
+    [OpenApiRequestBody(typeof(AssignRequest))]
+    [OpenApiResponse(204)]
+    public static IActionResult Run(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "assign")] HttpRequest request) => new OkResult();
+}
+
+public sealed class DynamicValuesWrongParameterFunctions
+{
+    [Function("Wrong")]
+    [OpenApiOperation("Wrong", "Falscher Name")]
+    [OpenApiParameter("processId")]
+    [OpenApiDynamicValues("process", "ListWritableProcesses")]
+    [OpenApiResponse(204)]
+    public static IActionResult Run(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "wrong")] HttpRequest request) => new OkResult();
+}
+
+public sealed class DynamicValuesWithoutParameterFunctions
+{
+    [Function("Nameless")]
+    [OpenApiOperation("Nameless", "Ohne Parameternamen")]
+    [OpenApiDynamicValues("ListWritableProcesses")]
+    [OpenApiResponse(204)]
+    public static IActionResult Run(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "nameless")] HttpRequest request) => new OkResult();
+}
+
+public sealed class DynamicValuesMalformedFunctions
+{
+    [Function("Malformed")]
+    [OpenApiOperation("Malformed", "Parameters ohne =")]
+    [OpenApiParameter("processId")]
+    [OpenApiDynamicValues("processId", "ListWritableProcesses", Parameters = ["mode"])]
+    [OpenApiResponse(204)]
+    public static IActionResult Run(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "malformed")] HttpRequest request) => new OkResult();
+}
+
+public sealed class DynamicValuesNamedPropertyFunctions
+{
+    [Function("Named")]
+    [OpenApiOperation("Named", "Eigenschaft mit Parameternamen")]
+    [OpenApiRequestBody(typeof(NamedRequest))]
+    [OpenApiResponse(204)]
+    public static IActionResult Run(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "named")] HttpRequest request) => new OkResult();
+}
+
+public sealed record ProcessInfo(string Id, string Title);
+
+public sealed record ProcessPage(IReadOnlyList<ProcessInfo> Value, string? NextLink);
+
+public sealed record TaskRequest(
+    string Title,
+    [property: OpenApiDynamicValues("ProcessesGet", ValuePath = "id", ValueTitle = "title", Parameters = ["projectId={projectId}", "mode=read"])] string? FollowUpProcessId);
+
+public sealed record AssignRequest([property: OpenApiDynamicValues("ListWritableProcesses", ValuePath = "id")] string ProcessId);
+
+public sealed record NamedRequest([property: OpenApiDynamicValues("processId", "ListWritableProcesses")] string ProcessId);
+
 [JsonDerivedType(typeof(Circle), "circle")]
 [JsonDerivedType(typeof(Square), "square")]
 public abstract record Shape;

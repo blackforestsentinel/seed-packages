@@ -206,7 +206,7 @@ Nach dem Build steht dazwischen etwa:
 - **Lokal** schreibt der Build die Tabelle zwischen die Marker, nur wenn sie sich ändert, und meldet `… (Endpunkt-Tabelle aktualisiert)`. Die Datei gehört in denselben Commit wie der Code.
 - **In der CI** prüft er nur und ändert nichts: wenn `TF_BUILD` gesetzt ist (Azure DevOps) oder `ContinuousIntegrationBuild=true`. Weicht die Tabelle ab, warnt er mit `SEEDOPENAPI015`; dann lokal bauen und die Datei committen. Unterschiede nur im Zeilenende zählen nicht.
 - Fehlt die Datei oder ein Marker, warnt der Build mit `SEEDOPENAPI016` und schreibt nichts. Marker in Codeblöcken zählen nicht; so darf die README sie auch als Beispiel zeigen. Ohne `SeedOpenApiReadme` passiert nichts.
-- **Spalten:** Pfad mit `basePath`, Zusammenfassung ohne den Zusatz `(deprecated)`. Capability: was `[RequireCapability]` an Methode und Klasse verlangt (alle nötig), `jede Rolle` bei `[RequireAnyRole]`, `anonym` bei `[AllowAnonymous]`, sonst `–`. Die Attribute aus Bfs.Seed.Auth erkennt der Generator am Namen; eine Abhängigkeit auf das Paket gibt es nicht.
+- **Spalten:** Pfad mit `basePath`, Zusammenfassung ohne den Zusatz `(deprecated)`. Capability: was `[RequireCapability]` an Methode und Klasse verlangt (alle nötig), `jede Rolle` bei `[RequireAnyRole]`, `ohne Rolle` bei `[AllowWithoutRole]` (angemeldet, auch ohne App-Rolle), `anonym` bei `[AllowAnonymous]`, sonst `–`. Das strengere Attribut gilt. Die Attribute aus Bfs.Seed.Auth erkennt der Generator am Namen; eine Abhängigkeit auf das Paket gibt es nicht.
 - In Tests liefert `SeedOpenApiResult.EndpointTable()` dieselbe Tabelle.
 
 ## Wo die Datei landet

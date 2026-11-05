@@ -56,11 +56,14 @@ public class ReadmeTableTests
     [Fact]
     public void Access_ReadsAuthAttributesByName()
     {
-        // Bfs.Seed.Auth bringt [RequireAnyRole] erst mit; der Generator erkennt es am Namen, deshalb genügt ein nachgebauter Typ.
+        // Der Generator erkennt die Attribute aus Bfs.Seed.Auth am Namen; nachgebaute Typen genügen, auch für neuere Attribute.
         var anyRole = Activator.CreateInstance(FakeAttribute("Bfs.Seed.Auth.RequireAnyRoleAttribute"))!;
+        var withoutRole = Activator.CreateInstance(FakeAttribute("Bfs.Seed.Auth.AllowWithoutRoleAttribute"))!;
         var other = Activator.CreateInstance(FakeAttribute("Other.RequireAnyRoleAttribute"))!;
 
         Assert.Equal("jede Rolle", SeedOpenApiDocument.Access([anyRole], anonymous: false));
+        Assert.Equal("ohne Rolle", SeedOpenApiDocument.Access([withoutRole], anonymous: false));
+        Assert.Equal("jede Rolle", SeedOpenApiDocument.Access([withoutRole, anyRole], anonymous: false));
         Assert.Equal("–", SeedOpenApiDocument.Access([other], anonymous: false));
         Assert.Equal("`a.read`, `b.write`", SeedOpenApiDocument.Access([anyRole, new RequireCapabilityAttribute("b.write"), new RequireCapabilityAttribute("a.read"), new RequireCapabilityAttribute("b.write")], anonymous: false));
         Assert.Equal("anonym", SeedOpenApiDocument.Access([new RequireCapabilityAttribute("a.read")], anonymous: true));

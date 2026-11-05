@@ -23,6 +23,7 @@ public static partial class SeedOpenApiDocument
     // Bfs.Seed.Auth nur über den Namen: Das Paket hängt nicht davon ab.
     private const string RequireCapabilityAttribute = "Bfs.Seed.Auth.RequireCapabilityAttribute";
     private const string RequireAnyRoleAttribute = "Bfs.Seed.Auth.RequireAnyRoleAttribute";
+    private const string AllowWithoutRoleAttribute = "Bfs.Seed.Auth.AllowWithoutRoleAttribute";
 
     private const string SecurityName = "oauth2";
 
@@ -424,7 +425,8 @@ public static partial class SeedOpenApiDocument
 
     /// <summary>
     /// Wer die Function aufrufen darf, für die Endpunkt-Tabelle: <c>anonym</c>, die Capabilities aus
-    /// <c>[RequireCapability]</c> (alle nötig), <c>jede Rolle</c> bei <c>[RequireAnyRole]</c>, sonst <c>–</c>.
+    /// <c>[RequireCapability]</c> (alle nötig), <c>jede Rolle</c> bei <c>[RequireAnyRole]</c>, <c>ohne Rolle</c>
+    /// bei <c>[AllowWithoutRole]</c>, sonst <c>–</c>. Das strengere Attribut gilt, wie in Bfs.Seed.Auth.
     /// </summary>
     internal static string Access(IEnumerable<object> attributes, bool anonymous)
     {
@@ -446,7 +448,9 @@ public static partial class SeedOpenApiDocument
             return string.Join(", ", capabilities.Select(c => $"`{c}`"));
         }
 
-        return all.Any(a => a.GetType().FullName == RequireAnyRoleAttribute) ? "jede Rolle" : "–";
+        return all.Any(a => a.GetType().FullName == RequireAnyRoleAttribute) ? "jede Rolle"
+            : all.Any(a => a.GetType().FullName == AllowWithoutRoleAttribute) ? "ohne Rolle"
+            : "–";
     }
 
     private sealed record Deprecation(string? Message);

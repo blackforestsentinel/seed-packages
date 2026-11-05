@@ -10,17 +10,24 @@ namespace Bfs.Seed.Functions.Core;
 internal sealed record SeedFunctionAssemblies(IReadOnlyList<Assembly> Assemblies);
 
 /// <summary>
-/// Lässt die App nicht starten, wenn eine aufrufbare Function <c>[RequireCapability]</c> oder
-/// <c>[RequireScope]</c> aus Bfs.Seed.Auth trägt, die Token-Prüfung (<c>UseSeedAuth()</c>) aber
-/// fehlt. Die Attribute prüft nur deren Middleware; ohne sie wäre die Function für jeden ohne
-/// Anmeldung erreichbar. Abgeschaltete Functions (<c>AzureWebJobs.&lt;Name&gt;.Disabled</c>) zählen nicht.
+/// Lässt die App nicht starten, wenn eine aufrufbare Function ein Attribut aus Bfs.Seed.Auth trägt,
+/// das eine Anmeldung voraussetzt (<c>[RequireCapability]</c>, <c>[RequireScope]</c>, <c>[RequireAnyRole]</c>,
+/// <c>[AllowWithoutRole]</c>), die Token-Prüfung (<c>UseSeedAuth()</c>) aber fehlt. Die Attribute prüft nur
+/// deren Middleware; ohne sie wäre die Function für jeden ohne Anmeldung erreichbar. Abgeschaltete
+/// Functions (<c>AzureWebJobs.&lt;Name&gt;.Disabled</c>) zählen nicht.
 /// </summary>
 internal sealed class SeedAuthUsageValidation(IServiceCollection services, IConfiguration configuration, SeedFunctionAssemblies assemblies)
     : IValidateOptions<SeedOptions>
 {
-    // Namen statt Typen: Bfs.Seed.Functions.Core referenziert Bfs.Seed.Auth nicht.
+    // Namen statt Typen: Bfs.Seed.Functions.Core referenziert Bfs.Seed.Auth nicht. [AllowWithoutRole]
+    // lockert nichts, verspricht aber eine Anmeldung; ohne Token-Prüfung wäre die Function anonym.
     internal static readonly string[] AuthAttributes =
-        ["Bfs.Seed.Auth.RequireCapabilityAttribute", "Bfs.Seed.Auth.RequireScopeAttribute"];
+    [
+        "Bfs.Seed.Auth.RequireCapabilityAttribute",
+        "Bfs.Seed.Auth.RequireScopeAttribute",
+        "Bfs.Seed.Auth.RequireAnyRoleAttribute",
+        "Bfs.Seed.Auth.AllowWithoutRoleAttribute",
+    ];
 
     // Registriert nur UseSeedAuth(), in allen Versionen von Bfs.Seed.Auth.
     internal const string AuthService = "Bfs.Seed.Auth.SeedTokenValidator";
@@ -36,12 +43,12 @@ internal sealed class SeedAuthUsageValidation(IServiceCollection services, IConf
         return open.Count == 0
             ? ValidateOptionsResult.Success
             : ValidateOptionsResult.Fail(
-                $"AddSeedCore(): Die Functions {string.Join(", ", open)} verlangen mit [RequireCapability] oder [RequireScope] eine Berechtigung, " +
+                $"AddSeedCore(): Die Functions {string.Join(", ", open)} verlangen mit [RequireCapability], [RequireScope], [RequireAnyRole] oder [AllowWithoutRole] eine Anmeldung, " +
                 "aber die Token-Prüfung fehlt (UseSeedAuth(), Feature sso). Ohne sie wären sie für jeden ohne Anmeldung erreichbar. " +
                 "sso einschalten oder die Functions abschalten (App-Setting AzureWebJobs.<Name>.Disabled=true).");
     }
 
-    /// <summary>Namen der nicht abgeschalteten Functions, die eine Capability oder einen Scope verlangen.</summary>
+    /// <summary>Namen der nicht abgeschalteten Functions, die mit einem der <see cref="AuthAttributes"/> eine Anmeldung verlangen.</summary>
     internal static IReadOnlyList<string> FindProtectedFunctions(IConfiguration configuration, IEnumerable<Assembly> assemblies)
     {
         const BindingFlags Members = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly;

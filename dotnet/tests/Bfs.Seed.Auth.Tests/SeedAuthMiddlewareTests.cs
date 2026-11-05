@@ -181,6 +181,89 @@ public class SeedAuthMiddlewareTests
     }
 
     [Fact]
+    public async Task WithoutAttribute_ValidTokenWithoutRole_IsAccepted()
+    {
+        // Das Verhalten, das SEEDAUTH001 sichtbar macht: Ohne Attribut genügt jedes gültige Token.
+        var (status, called, http) = await InvokeAsync(nameof(CapabilityFunctions.Me), tokens.CreateToken());
+
+        Assert.Equal((200, true), (status, called));
+        Assert.Empty(http.User.GetRoles());
+    }
+
+    [Fact]
+    public async Task RequireAnyRole_WithoutRole_Returns403()
+    {
+        var (status, called, _) = await InvokeAsync(nameof(RoleFunctions.Orders), tokens.CreateToken(), typeof(RoleFunctions));
+
+        Assert.Equal((403, false), (status, called));
+    }
+
+    [Fact]
+    public async Task RequireAnyRole_WithoutToken_Returns401()
+    {
+        var (status, called, _) = await InvokeAsync(nameof(RoleFunctions.Orders), token: null, typeof(RoleFunctions));
+
+        Assert.Equal((401, false), (status, called));
+    }
+
+    [Theory]
+    [InlineData("Reader")]
+    [InlineData("Unbekannt")]
+    public async Task RequireAnyRole_AnyRoleOfTheApi_IsEnough(string role)
+    {
+        // Auch eine Rolle, die auth.roles nicht kennt: Entra stellt nur Rollen dieser API aus.
+        var (status, called, _) = await InvokeAsync(nameof(RoleFunctions.Orders), tokens.CreateToken(roles: [role]), typeof(RoleFunctions));
+
+        Assert.Equal((200, true), (status, called));
+    }
+
+    [Fact]
+    public async Task RequireAnyRole_RoleWithoutCapabilities_IsEnough()
+    {
+        var map = SeedCapabilityMap.Parse(SeedCapabilityMapTests.AudienceYaml);
+
+        var (status, called, _) = await InvokeAsync(nameof(RoleFunctions.Orders), tokens.CreateToken(roles: ["Team.Vertrieb"]), typeof(RoleFunctions), map: map);
+
+        Assert.Equal((200, true), (status, called));
+    }
+
+    [Fact]
+    public async Task RequireAnyRole_AppOnlyToken_HasItsApplicationRole()
+    {
+        var (status, called, _) = await InvokeAsync(nameof(RoleFunctions.Orders), tokens.CreateToken(scope: null, roles: ["Sync"]), typeof(RoleFunctions));
+
+        Assert.Equal((200, true), (status, called));
+    }
+
+    [Fact]
+    public async Task RequireAnyRole_LocalModeWithoutRoles_Returns403()
+    {
+        tokens.AuthOptions.Mode = SeedAuthMode.Local;
+
+        var (status, called, _) = await InvokeAsync(nameof(RoleFunctions.Orders), token: null, typeof(RoleFunctions));
+
+        Assert.Equal((403, false), (status, called));
+    }
+
+    [Fact]
+    public async Task AllowWithoutRole_AcceptsTokenWithoutRole_ButNotWithoutToken()
+    {
+        var withToken = await InvokeAsync(nameof(RoleFunctions.Me), tokens.CreateToken(), typeof(RoleFunctions));
+        var withoutToken = await InvokeAsync(nameof(RoleFunctions.Me), token: null, typeof(RoleFunctions));
+
+        Assert.Equal((200, true), (withToken.Status, withToken.Called));
+        Assert.Equal((401, false), (withoutToken.Status, withoutToken.Called));
+    }
+
+    [Fact]
+    public async Task AllowWithoutRole_DoesNotLiftRequireAnyRoleOfTheClass()
+    {
+        var (status, called, _) = await InvokeAsync(nameof(RoleClassFunctions.Run), tokens.CreateToken(), typeof(RoleClassFunctions));
+
+        Assert.Equal((403, false), (status, called));
+    }
+
+    [Fact]
     public void Inspect_CombinesClassAndMethodAttributes()
     {
         var requirements = SeedAuthMiddleware.Inspect($"{typeof(ScopedFunctions).FullName}.{nameof(ScopedFunctions.Special)}");
@@ -188,6 +271,8 @@ public class SeedAuthMiddlewareTests
         Assert.False(requirements.AllowAnonymous);
         Assert.Equal(["special_scope"], requirements.Scopes);
         Assert.Equal(["invoices.read", "invoices.write"], requirements.Capabilities.Order());
+        Assert.False(requirements.RequireAnyRole);
+        Assert.True(SeedAuthMiddleware.Inspect($"{typeof(RoleClassFunctions).FullName}.{nameof(RoleClassFunctions.Run)}").RequireAnyRole);
     }
 
     private async Task<(int Status, bool Called, HttpContext Http)> InvokeAsync(

@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="xunit.v3" Version="4.0.1" />
+    <!-- Dieselbe Version wie im Analyzer: Die Tests übersetzen Beispielcode mit diesem Compiler. -->
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.8.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Bfs.Seed.Analyzers\Bfs.Seed.Analyzers.csproj" />
+    <!--
+      Nur damit die Assemblies der echten Attribute im Ausgabeordner liegen: Functions Worker,
+      Bfs.Seed.Auth, ASP.NET Core und ModelContextProtocol. Der Beispielcode referenziert sie.
+    -->
+    <ProjectReference Include="..\..\src\Bfs.Seed.Mcp\Bfs.Seed.Mcp.csproj" />
+  </ItemGroup>
+
+</Project>

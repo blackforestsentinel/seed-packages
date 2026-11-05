@@ -13,8 +13,17 @@
     <PackageReference Include="ModelContextProtocol.Core" Version="2.2.0" />
   </ItemGroup>
 
+  <!--
+    PrivateAssets ohne analyzers: Der Analyzer aus Bfs.Seed.Auth soll auch in Projekten wirken, die nur
+    Bfs.Seed.Mcp referenzieren. Mit dem Standard stünde in der Abhängigkeit exclude="Build,Analyzers".
+  -->
   <ItemGroup>
-    <ProjectReference Include="..\Bfs.Seed.Auth\Bfs.Seed.Auth.csproj" />
+    <ProjectReference Include="..\Bfs.Seed.Auth\Bfs.Seed.Auth.csproj" PrivateAssets="contentfiles;build" />
+  </ItemGroup>
+
+  <!-- Dieselben Regeln für die Functions dieses Pakets (SeedMcp, SeedMcpResourceMetadata). -->
+  <ItemGroup>
+    <ProjectReference Include="..\Bfs.Seed.Analyzers\Bfs.Seed.Analyzers.csproj" ReferenceOutputAssembly="false" OutputItemType="Analyzer" PrivateAssets="all" />
   </ItemGroup>
 
   <ItemGroup>

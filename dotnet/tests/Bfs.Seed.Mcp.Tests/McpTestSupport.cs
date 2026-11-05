@@ -55,9 +55,12 @@ internal sealed class McpTestApp
         return new McpTestApp(services.BuildServiceProvider(new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true }));
     }
 
-    public static ClaimsPrincipal User(params string[] capabilities)
+    public static ClaimsPrincipal User(params string[] capabilities) => UserWithRoles([], capabilities);
+
+    public static ClaimsPrincipal UserWithRoles(string[] roles, params string[] capabilities)
     {
         var claims = new List<Claim> { new("name", "Erika Muster"), new("oid", "55555555-5555-5555-5555-555555555555") };
+        claims.AddRange(roles.Select(r => new Claim(SeedClaimTypes.Role, r)));
         claims.AddRange(capabilities.Select(c => new Claim(SeedClaimTypes.Capability, c)));
         return new ClaimsPrincipal(new ClaimsIdentity(claims, authenticationType: "Bearer", nameType: "name", roleType: "roles"));
     }

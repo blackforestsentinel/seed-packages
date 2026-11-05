@@ -39,3 +39,20 @@ public sealed class ScopedFunctions
     [RequireCapability("invoices.write")]
     public string Special() => "special";
 }
+
+public sealed class RoleFunctions
+{
+    [RequireAnyRole]
+    public string Orders() => "orders";
+
+    [AllowWithoutRole]
+    public string Me() => "me";
+}
+
+[RequireAnyRole]
+public sealed class RoleClassFunctions
+{
+    // [AllowWithoutRole] lockert nichts: Die Klasse verlangt weiter eine Rolle.
+    [AllowWithoutRole]
+    public string Run() => "run";
+}

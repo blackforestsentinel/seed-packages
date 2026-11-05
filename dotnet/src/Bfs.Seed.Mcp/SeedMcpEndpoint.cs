@@ -172,7 +172,15 @@ internal sealed class SeedMcpEndpoint(
             ?? throw new McpProtocolException($"Unbekanntes Werkzeug: '{name}'.", McpErrorCode.InvalidParams);
 
         var missing = tool.MissingCapabilities(user);
-        logger.LogWarning("MCP-Werkzeug {Tool} abgelehnt, es fehlen die Capabilities {Capabilities}.", tool.Name, missing);
+        if (missing.Count > 0)
+        {
+            logger.LogWarning("MCP-Werkzeug {Tool} abgelehnt, es fehlen die Capabilities {Capabilities}.", tool.Name, missing);
+        }
+        else
+        {
+            logger.LogWarning("MCP-Werkzeug {Tool} abgelehnt, es verlangt eine App-Rolle.", tool.Name);
+        }
+
         return SeedMcpTool.Refusal(tool.Name, missing);
     }
 

@@ -7,7 +7,7 @@ using ModelContextProtocol.Server;
 
 namespace Bfs.Seed.Mcp.Tests;
 
-/// <summary>Werkzeuge für die Tests: eines frei, eines mit Capability, eines mit Argumenten.</summary>
+/// <summary>Werkzeuge für die Tests: frei, mit Capability, mit irgendeiner Rolle, mit Argumenten.</summary>
 [McpServerToolType]
 public sealed class SampleTools(Greeter greeter)
 {
@@ -20,6 +20,10 @@ public sealed class SampleTools(Greeter greeter)
         [Description("Kunde")] string kunde,
         [Description("Betrag in Euro")] decimal betrag,
         [Description("Art")] InvoiceKind art = InvoiceKind.Normal) => $"{kunde}: {betrag.ToString(CultureInfo.InvariantCulture)} ({art})";
+
+    [McpServerTool(Name = "auftraege", ReadOnly = true), Description("Listet Aufträge.")]
+    [RequireAnyRole]
+    public static string Orders() => "keine";
 
     [McpServerTool(Name = "wer_bin_ich", ReadOnly = true), Description("Nennt die angemeldete Person.")]
     public string WhoAmI(ClaimsPrincipal user) => greeter.Greet(user.FindFirst("name")?.Value);

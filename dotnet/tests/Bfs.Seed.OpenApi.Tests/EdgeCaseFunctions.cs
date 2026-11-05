@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -228,6 +229,120 @@ public sealed class DynamicValuesNamedPropertyFunctions
     [OpenApiResponse(204)]
     public static IActionResult Run(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "named")] HttpRequest request) => new OkResult();
+}
+
+// Deprecated: Hinweis am Attribut vor [Obsolete], Zusatz nicht doppelt, summary zu lang, [Obsolete] an der Klasse.
+
+public sealed class DeprecationFunctions
+{
+    // DeprecationMessage allein genügt; der Text am Attribut geht dem aus [Obsolete] vor.
+    [Obsolete("Text aus Obsolete")]
+    [Function("MessageFirst")]
+    [OpenApiOperation("MessageFirst", "Hinweis am Attribut", DeprecationMessage = "Stattdessen CreateOrder verwenden.")]
+    [OpenApiResponse(204)]
+    public static IActionResult MessageFirst(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "message-first")] HttpRequest request) => new OkResult();
+
+    [Function("AlreadyMarked")]
+    [OpenApiOperation("AlreadyMarked", "Schon markiert (Deprecated)", Description = "Alt (deprecated).", Deprecated = true)]
+    [OpenApiResponse(204)]
+    public static IActionResult AlreadyMarked(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "already-marked")] HttpRequest request) => new OkResult();
+
+    // 70 Zeichen; mit dem Zusatz über 80.
+    [Function("LongSummary")]
+    [OpenApiOperation("LongSummary", "Eine recht lange Zusammenfassung, die fast an die Grenze heranreicht", Deprecated = true)]
+    [OpenApiResponse(204)]
+    public static IActionResult LongSummary(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "long-summary")] HttpRequest request) => new OkResult();
+}
+
+// Der Code des Functions-SDK für den Aufruf bekäme hierfür CS0618; der Generator wertet es nicht aus.
+[Obsolete("Ganze Klasse")]
+public sealed class ObsoleteClassFunctions
+{
+    [Function("InObsoleteClass")]
+    [OpenApiOperation("InObsoleteClass", "In veralteter Klasse")]
+    [OpenApiResponse(204)]
+    public static IActionResult Run(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "obsolete-class")] HttpRequest request) => new OkResult();
+}
+
+// Enums ohne Werteliste und Sonderfälle: leer, [Flags], eigener Converter, doppelte Werte, ulong.
+
+public sealed class EnumEdgeCaseFunctions
+{
+    [Function("EnumEdgeCases")]
+    [OpenApiOperation("EnumEdgeCases", "Enums mit Sonderfällen")]
+    [OpenApiParameter("nothing", Type = typeof(EmptyEnum))]
+    [OpenApiParameter("rights", Type = typeof(StringRights))]
+    [OpenApiParameter("codes", Type = typeof(Code?[]))]
+    [OpenApiRequestBody(typeof(EnumEdgeCaseRequest))]
+    [OpenApiResponse(200, typeof(Alias))]
+    public static IActionResult Run(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "enum-edge-cases")] HttpRequest request) => new OkResult();
+}
+
+public enum EmptyEnum
+{
+}
+
+[Flags]
+public enum Rights
+{
+    None = 0,
+    Read = 1,
+    Write = 2,
+}
+
+[Flags]
+[JsonConverter(typeof(JsonStringEnumConverter<StringRights>))]
+public enum StringRights
+{
+    None = 0,
+    Read = 1,
+    Write = 2,
+}
+
+[JsonConverter(typeof(CodeConverter))]
+public enum Code
+{
+    Alpha,
+    Beta,
+}
+
+public enum Alias
+{
+    First = 1,
+    Primary = 1,
+    Second = 2,
+}
+
+public enum Huge : ulong
+{
+    Max = ulong.MaxValue,
+}
+
+public sealed record EnumEdgeCaseRequest(EmptyEnum Nothing, Rights Rights, StringRights StringRights, Code Code, Alias Alias, Huge Huge);
+
+public sealed class CodeConverter : JsonConverter<Code>
+{
+    public override Code Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) =>
+        reader.GetString() == "b" ? Code.Beta : Code.Alpha;
+
+    public override void Write(Utf8JsonWriter writer, Code value, JsonSerializerOptions options) =>
+        writer.WriteStringValue(value == Code.Beta ? "b" : "a");
+}
+
+// Endpunkt-Tabelle: Zeichen, die eine Markdown-Tabelle brechen würden.
+
+public sealed class TableEdgeCaseFunctions
+{
+    [Function("Piped")]
+    [OpenApiOperation("Piped", "Ein | im Titel", DeprecationMessage = "Zeile eins\nZeile | zwei")]
+    [OpenApiResponse(204)]
+    public static IActionResult Run(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "piped")] HttpRequest request) => new OkResult();
 }
 
 public sealed record ProcessInfo(string Id, string Title);

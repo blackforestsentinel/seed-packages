@@ -14,8 +14,18 @@ public sealed record SeedOpenApiResult(JsonObject Document, IReadOnlyList<SeedOp
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
     };
 
+    /// <summary>Endpunkte in der Reihenfolge des Dokuments, für <see cref="EndpointTable"/>.</summary>
+    internal IReadOnlyList<SeedOpenApiEndpoint> Endpoints { get; init; } = [];
+
     /// <summary>Eingerückt, Umlaute unverändert, Zeilenende LF auf jedem System, mit Zeilenumbruch am Ende.</summary>
     public string ToJson() => Document.ToJsonString(JsonOptions) + "\n";
+
+    /// <summary>
+    /// Endpunkte als Markdown-Tabelle (Zeilenende LF, ohne Zeilenumbruch am Ende): Methode, Pfad
+    /// mit <c>basePath</c>, operationId, summary, Capability und Deprecated. Diese Tabelle schreibt
+    /// der Build in die Datei aus <c>SeedOpenApiReadme</c>.
+    /// </summary>
+    public string EndpointTable() => ReadmeTable.Render(Endpoints);
 }
 
 /// <summary>Hinweis zum Dokument; der Build zeigt ihn als Warnung mit <see cref="Code"/>.</summary>
@@ -54,6 +64,9 @@ internal static class SeedOpenApiCodes
     public const string TooLarge = "SEEDOPENAPI011";
     public const string FunctionKey = "SEEDOPENAPI012";
     public const string DynamicValuesMismatch = "SEEDOPENAPI013";
+    public const string EnumWithoutValues = "SEEDOPENAPI014";
+    public const string EndpointTableOutdated = "SEEDOPENAPI015";
+    public const string EndpointTableMarkers = "SEEDOPENAPI016";
 
     public const string DuplicateOperationId = "SEEDOPENAPI100";
     public const string DuplicateOperation = "SEEDOPENAPI101";

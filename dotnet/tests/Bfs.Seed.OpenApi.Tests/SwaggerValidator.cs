@@ -7,7 +7,9 @@ namespace Bfs.Seed.OpenApi.Tests;
 /// <summary>
 /// Prüft die Regeln von Swagger 2.0, an denen der Custom Connector scheitern würde: Pflichtfelder,
 /// Parameter, auflösbare Verweise, nur Schlüsselwörter aus Swagger 2.0 (keine Typ-Listen, kein anyOf),
-/// x-ms-dynamic-values mit den Schlüsseln laut Microsoft und vorhandener operationId.
+/// x-ms-dynamic-values mit den Schlüsseln laut Microsoft und vorhandener operationId,
+/// enum nicht leer, x-ms-enum-values nach den Regeln des Swagger Validators der Power Platform
+/// (displayName Pflicht, jeder Wert aus enum, kein Wert doppelt), deprecated als bool.
 /// Kein vollständiger Validator; im Build prüft zusätzlich swagger-cli (README).
 /// </summary>
 internal static partial class SwaggerValidator
@@ -56,6 +58,7 @@ internal static partial class SwaggerValidator
                 Check(Methods.Contains(method), $"{where}: unbekannte Methode");
                 var operation = node!.AsObject();
                 Check(operation.Text("operationId") is { } id && operationIds.Add(id), $"{where}: operationId fehlt oder doppelt");
+                Check(operation["deprecated"]?.GetValueKind() is null or JsonValueKind.True or JsonValueKind.False, $"{where}: deprecated ist kein bool");
 
                 var pathNames = new HashSet<string>();
                 foreach (var parameter in operation["parameters"]?.AsArray().Select(p => p!.AsObject()) ?? [])
@@ -77,6 +80,7 @@ internal static partial class SwaggerValidator
                     else
                     {
                         Check(ParameterTypes.Contains(parameter.Text("type") ?? ""), $"{where}.{name}: type {parameter["type"]?.ToJsonString()} ist für Parameter nicht erlaubt");
+                        Enum(parameter, $"{where}.{name}");
                     }
 
                     if (location == "path")
@@ -192,6 +196,8 @@ internal static partial class SwaggerValidator
                 Check(type.GetValueKind() == JsonValueKind.String && Types.Contains(type.GetValue<string>()), $"{where}: type {type.ToJsonString()}");
             }
 
+            Enum(schema, where);
+
             if (schema["required"] is { } required)
             {
                 var names = required.AsArray().Select(r => r!.GetValue<string>()).ToList();
@@ -222,6 +228,28 @@ internal static partial class SwaggerValidator
             foreach (var part in schema["allOf"]?.AsArray() ?? [])
             {
                 Schema(part, $"{where} allOf");
+            }
+        }
+
+        // enum und x-ms-enum-values an einem Parameter oder Schema.
+        void Enum(JsonObject node, string where)
+        {
+            var values = node["enum"] as JsonArray;
+            Check(node["enum"] is null || values is { Count: > 0 }, $"{where}: enum ist leer");
+            if (node["x-ms-enum-values"] is not { } extension)
+            {
+                return;
+            }
+
+            Check(values is not null, $"{where}: x-ms-enum-values ohne enum");
+            var known = values?.Select(v => v?.ToJsonString()).ToHashSet() ?? [];
+            var seen = new HashSet<string?>();
+            foreach (var entry in extension as JsonArray ?? [])
+            {
+                Check(entry is JsonObject e && e.Text("displayName") is { Length: > 0 } && e.All(k => k.Key is "value" or "displayName"), $"{where}: x-ms-enum-values braucht value und displayName");
+                var value = entry?["value"]?.ToJsonString();
+                Check(known.Contains(value), $"{where}: x-ms-enum-values nennt {value}, das nicht in enum steht");
+                Check(seen.Add(value), $"{where}: x-ms-enum-values nennt {value} mehrfach");
             }
         }
     }

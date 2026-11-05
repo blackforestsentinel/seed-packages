@@ -6,6 +6,12 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!--
+      Azure.Identity und Azure.Security.KeyVault.Secrets nur für die Ablaufdaten der Secrets im
+      Health-Report (Seed:KeyVaultUri). Azure.Identity in derselben Version wie Bfs.Seed.Storage.
+    -->
+    <PackageReference Include="Azure.Identity" Version="1.21.0" />
+    <PackageReference Include="Azure.Security.KeyVault.Secrets" Version="4.11.0" />
     <PackageReference Include="Microsoft.ApplicationInsights.WorkerService" Version="2.23.0" />
     <PackageReference Include="Microsoft.Azure.Functions.Worker" Version="2.51.0" />
     <PackageReference Include="Microsoft.Azure.Functions.Worker.ApplicationInsights" Version="2.50.0" />

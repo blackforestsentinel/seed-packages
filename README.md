@@ -4,7 +4,7 @@ Code-Bausteine für Projekte aus dem [Sentinel-Seed-Template](https://github.com
 
 | Paket | Registry | Inhalt |
 | --- | --- | --- |
-| [`Bfs.Seed.Functions.Core`](dotnet/src/Bfs.Seed.Functions.Core) | nuget.org | `AddSeedCore()`: Application Insights, `SeedOptions`, `SeedHealthReport`, `SeedSecrets` mit Prüfung beim Start |
+| [`Bfs.Seed.Functions.Core`](dotnet/src/Bfs.Seed.Functions.Core) | nuget.org | `AddSeedCore()`: Application Insights, `SeedOptions`, `SeedHealthReport` mit bald ablaufenden Secrets, `SeedSecrets` mit Prüfung beim Start |
 | [`@blackforestsentinel/seed-web-core`](web/packages/seed-web-core) | npm | `loadRuntimeConfig()`, `createHttpClient()` |
 | [`Bfs.Seed.Auth`](dotnet/src/Bfs.Seed.Auth) | nuget.org | `UseSeedAuth()`: Token-Prüfung gegen Entra ID, `[RequireCapability]`, `[RequireAnyRole]`, `[AllowWithoutRole]`, `[AllowAnonymous]`; Analyzer im Build: Functions ohne Berechtigungsangabe, Unterdrückungen ohne Begründung |
 | [`@blackforestsentinel/seed-web-auth`](web/packages/seed-web-auth) | npm | `createSeedAuth()`: Login per MSAL, Access-Tokens für die API und für Microsoft Graph |

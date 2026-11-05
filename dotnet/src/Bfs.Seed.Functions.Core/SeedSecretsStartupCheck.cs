@@ -1,6 +1,8 @@
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Bfs.Seed.Functions.Core;
 
@@ -43,7 +45,21 @@ internal static class SeedSecretsServiceCollectionExtensions
 {
     public static IServiceCollection AddSeedSecrets(this IServiceCollection services)
     {
-        services.AddSingleton<SeedSecrets>();
+        // Mit Seed:KeyVaultUri auch die Ablaufdaten aus dem Vault; gelesen erst, wenn jemand fragt,
+        // damit der Kaltstart nicht auf den Vault wartet.
+        services.AddSingleton(sp =>
+        {
+            var configuration = sp.GetRequiredService<IConfiguration>();
+            var source = SeedKeyVaultSecretSource.FromConfiguration(configuration);
+            if (source is null)
+            {
+                return new SeedSecrets(configuration);
+            }
+
+            var logger = sp.GetService<ILoggerFactory>()?.CreateLogger<SeedSecrets>() ?? NullLogger<SeedSecrets>.Instance;
+            var expiry = new SeedSecretExpiryCache(source, TimeProvider.System, logger);
+            return new SeedSecrets(configuration, expiry, TimeProvider.System);
+        });
         services.AddHostedService<SeedSecretsStartupCheck>();
         return services;
     }

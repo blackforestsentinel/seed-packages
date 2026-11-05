@@ -87,6 +87,28 @@ public class McpEndpointTests
     }
 
     [Fact]
+    public async Task ToolsList_RequireAnyRole_ShowsToolOnlyWithARole()
+    {
+        var withRole = await app.RequestAsync("tools/list", user: McpTestApp.UserWithRoles(["Team.Vertrieb"]));
+        var withoutRole = await app.RequestAsync("tools/list", user: McpTestApp.User("invoices.write"));
+
+        Assert.Equal(["status", "auftraege", "wer_bin_ich"], withRole.ToolNames);
+        Assert.DoesNotContain("auftraege", withoutRole.ToolNames);
+    }
+
+    [Fact]
+    public async Task ToolsCall_RequireAnyRole_WithoutRole_IsRefused()
+    {
+        var refused = await app.RequestAsync("tools/call", new { name = "auftraege" });
+        var allowed = await app.RequestAsync("tools/call", new { name = "auftraege" }, McpTestApp.UserWithRoles(["Reader"]));
+
+        Assert.True(refused.ToolIsError);
+        Assert.Contains("„auftraege“ ist für dich nicht freigegeben. Es verlangt eine App-Rolle", refused.ToolText);
+        Assert.False(allowed.ToolIsError);
+        Assert.Equal("keine", allowed.ToolText);
+    }
+
+    [Fact]
     public async Task ToolsCall_UnknownTool_IsProtocolError()
     {
         var response = await app.RequestAsync("tools/call", new { name = "gibt_es_nicht" });

@@ -15,10 +15,13 @@ public sealed class SeedMcpFunctions(IServiceProvider services)
 {
     /// <summary>
     /// <c>POST /api/mcp</c>: eine JSON-RPC-Nachricht, eine Antwort (Streamable HTTP, zustandslos).
-    /// Die Token-Prüfung aus Bfs.Seed.Auth verlangt dafür den Scope <c>mcp_access</c>.
+    /// Die Token-Prüfung aus Bfs.Seed.Auth verlangt dafür den Scope <c>mcp_access</c>. Eine App-Rolle
+    /// verlangt erst das einzelne Werkzeug: Ein Werkzeug mit <c>[AllowWithoutRole]</c> soll auch
+    /// Personen ohne Rolle erreichen.
     /// </summary>
     [Function("SeedMcp")]
     [RequireScope(SeedMcp.Scope)]
+    [AllowWithoutRole]
     public Task<IActionResult> McpAsync(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", "post", "delete", Route = SeedMcp.Route)] HttpRequest request,
         FunctionContext context)

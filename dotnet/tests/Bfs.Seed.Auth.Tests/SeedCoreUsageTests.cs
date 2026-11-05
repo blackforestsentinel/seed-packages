@@ -26,6 +26,18 @@ public sealed class CoreUsageScopedFunctions
     public string Tools() => "tools";
 }
 
+// [RequireAnyRole] und [AllowWithoutRole] versprechen eine Anmeldung; ohne Token-Prüfung wären sie anonym.
+public sealed class CoreUsageRoleFunctions
+{
+    [Function("Orders")]
+    [RequireAnyRole]
+    public string Orders() => "orders";
+
+    [Function("WhoAmI")]
+    [AllowWithoutRole]
+    public string WhoAmI() => "me";
+}
+
 public sealed class SeedCoreUsageTests
 {
     [Fact]
@@ -36,7 +48,7 @@ public sealed class SeedCoreUsageTests
 
         var error = Assert.Throws<OptionsValidationException>(() => Resolve(builder));
 
-        Assert.Contains("ListInvoices, Tools", error.Message);
+        Assert.Contains("ListInvoices, Tools, Orders, WhoAmI", error.Message);
         Assert.DoesNotContain("Ping", error.Message);
     }
 
@@ -46,6 +58,8 @@ public sealed class SeedCoreUsageTests
         var builder = FunctionsApplication.CreateBuilder([]);
         builder.Configuration["AzureWebJobs.ListInvoices.Disabled"] = "true";
         builder.Configuration["AzureWebJobs.Tools.Disabled"] = "1";
+        builder.Configuration["AzureWebJobs.Orders.Disabled"] = "true";
+        builder.Configuration["AzureWebJobs.WhoAmI.Disabled"] = "true";
         builder.AddSeedCore();
 
         Assert.NotNull(Resolve(builder));
@@ -57,6 +71,8 @@ public sealed class SeedCoreUsageTests
         var builder = FunctionsApplication.CreateBuilder([]);
         builder.Configuration["AzureWebJobs.ListInvoices.Disabled"] = "false";
         builder.Configuration["AzureWebJobs.Tools.Disabled"] = "true";
+        builder.Configuration["AzureWebJobs.Orders.Disabled"] = "true";
+        builder.Configuration["AzureWebJobs.WhoAmI.Disabled"] = "true";
         builder.AddSeedCore();
 
         var error = Assert.Throws<OptionsValidationException>(() => Resolve(builder));

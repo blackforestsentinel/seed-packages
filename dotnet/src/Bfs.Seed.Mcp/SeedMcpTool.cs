@@ -6,8 +6,9 @@ using ModelContextProtocol.Server;
 namespace Bfs.Seed.Mcp;
 
 /// <summary>
-/// Ein Werkzeug mit den Capabilities aus seinen <see cref="RequireCapabilityAttribute"/> (an Methode
-/// und Klasse). Vor dem Aufruf prüft es Capabilities und Argumente.
+/// Ein Werkzeug mit den Anforderungen aus seinen Attributen (an Methode und Klasse):
+/// <see cref="RequireCapabilityAttribute"/> und <see cref="RequireAnyRoleAttribute"/>. Vor dem
+/// Aufruf prüft es diese und die Argumente.
 /// </summary>
 internal sealed class SeedMcpTool : DelegatingMcpServerTool
 {
@@ -18,17 +19,24 @@ internal sealed class SeedMcpTool : DelegatingMcpServerTool
             .Select(a => a.Capability)
             .Distinct(StringComparer.Ordinal)
             .ToArray();
+        RequiresRole = inner.Metadata.OfType<RequireAnyRoleAttribute>().Any();
     }
 
     /// <summary>Capabilities, die alle vorhanden sein müssen.</summary>
     public IReadOnlyList<string> RequiredCapabilities { get; }
+
+    /// <summary>Ob das Werkzeug irgendeine App-Rolle verlangt (<see cref="RequireAnyRoleAttribute"/>).</summary>
+    public bool RequiresRole { get; }
 
     public string Name => ProtocolTool.Name;
 
     public IReadOnlyList<string> MissingCapabilities(ClaimsPrincipal? user) =>
         RequiredCapabilities.Where(c => user?.HasCapability(c) != true).ToArray();
 
-    public bool IsAllowedFor(ClaimsPrincipal? user) => MissingCapabilities(user).Count == 0;
+    /// <summary>Ob das Werkzeug eine App-Rolle verlangt, die Person aber keine hat.</summary>
+    public bool LacksRole(ClaimsPrincipal? user) => RequiresRole && (user is null || user.GetRoles().Count == 0);
+
+    public bool IsAllowedFor(ClaimsPrincipal? user) => !LacksRole(user) && MissingCapabilities(user).Count == 0;
 
     public override ValueTask<CallToolResult> InvokeAsync(
         RequestContext<CallToolRequestParams> request,
@@ -37,7 +45,7 @@ internal sealed class SeedMcpTool : DelegatingMcpServerTool
         // Die Werkzeugliste je Anfrage enthält ohnehin nur erlaubte Werkzeuge. Die Prüfung hier
         // hält auch dann, wenn ein Werkzeug auf anderem Weg in einen Server gelangt.
         var missing = MissingCapabilities(request.User);
-        if (missing.Count > 0)
+        if (missing.Count > 0 || LacksRole(request.User))
         {
             return ValueTask.FromResult(Refusal(Name, missing));
         }
@@ -54,10 +62,14 @@ internal sealed class SeedMcpTool : DelegatingMcpServerTool
         return base.InvokeAsync(request, cancellationToken);
     }
 
-    /// <summary>Antwort, wenn die angemeldete Person das Werkzeug nicht verwenden darf.</summary>
-    public static CallToolResult Refusal(string name, IReadOnlyList<string> missing) => Error(
-        $"Das Werkzeug „{name}“ ist für dich nicht freigegeben. Es fehlt die Berechtigung " +
-        $"{string.Join(", ", missing.Select(c => $"„{c}“"))}; sie kommt über eine App-Rolle der Anwendung.");
+    /// <summary>
+    /// Antwort, wenn die angemeldete Person das Werkzeug nicht verwenden darf: mit den fehlenden
+    /// Capabilities, ohne sie mit der fehlenden App-Rolle.
+    /// </summary>
+    public static CallToolResult Refusal(string name, IReadOnlyList<string> missing) => Error(missing.Count > 0
+        ? $"Das Werkzeug „{name}“ ist für dich nicht freigegeben. Es fehlt die Berechtigung " +
+            $"{string.Join(", ", missing.Select(c => $"„{c}“"))}; sie kommt über eine App-Rolle der Anwendung."
+        : $"Das Werkzeug „{name}“ ist für dich nicht freigegeben. Es verlangt eine App-Rolle der Anwendung, und du hast keine.");
 
     private static CallToolResult Error(string text) => new()
     {

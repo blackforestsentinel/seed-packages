@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Roslyn-Analyzer für Projekte mit Bfs.Seed.Auth. Kein eigenes Paket: Bfs.Seed.Auth legt die DLL
+    unter analyzers/dotnet/cs in sein Paket. So wirken die Regeln in jedem Projekt, das Bfs.Seed.Auth
+    referenziert, ohne dass jemand daran denken muss.
+
+    netstandard2.0, weil der Compiler Analyzer nur in dieser Form lädt. Microsoft.CodeAnalysis 4.8
+    ist die Untergrenze: Visual Studio 17.8 bzw. .NET SDK 8.0.100; Seed-Projekte bauen mit .NET 10.
+  -->
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <IsPackable>false</IsPackable>
+    <IsRoslynComponent>true</IsRoslynComponent>
+    <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.8.0" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" Version="3.11.0" PrivateAssets="all" />
+  </ItemGroup>
+
+  <!-- Release-Tracking der Diagnose-IDs (RS2008): neue Regeln stehen erst unter Unshipped. -->
+  <ItemGroup>
+    <AdditionalFiles Include="AnalyzerReleases.Shipped.md" />
+    <AdditionalFiles Include="AnalyzerReleases.Unshipped.md" />
+  </ItemGroup>
+
+</Project>

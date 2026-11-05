@@ -6,7 +6,7 @@ Code-Bausteine für Projekte aus dem [Sentinel-Seed-Template](https://github.com
 | --- | --- | --- |
 | [`Bfs.Seed.Functions.Core`](dotnet/src/Bfs.Seed.Functions.Core) | nuget.org | `AddSeedCore()`: Application Insights, `SeedOptions`, `SeedHealthReport`, `SeedSecrets` mit Prüfung beim Start |
 | [`@blackforestsentinel/seed-web-core`](web/packages/seed-web-core) | npm | `loadRuntimeConfig()`, `createHttpClient()` |
-| [`Bfs.Seed.Auth`](dotnet/src/Bfs.Seed.Auth) | nuget.org | `UseSeedAuth()`: Token-Prüfung gegen Entra ID, `[AllowAnonymous]` für Ausnahmen |
+| [`Bfs.Seed.Auth`](dotnet/src/Bfs.Seed.Auth) | nuget.org | `UseSeedAuth()`: Token-Prüfung gegen Entra ID, `[RequireCapability]`, `[RequireAnyRole]`, `[AllowWithoutRole]`, `[AllowAnonymous]`; Analyzer im Build: Functions ohne Berechtigungsangabe, Unterdrückungen ohne Begründung |
 | [`@blackforestsentinel/seed-web-auth`](web/packages/seed-web-auth) | npm | `createSeedAuth()`: Login per MSAL, Access-Tokens für die API und für Microsoft Graph |
 | [`@blackforestsentinel/seed-web-people`](web/packages/seed-web-people) | npm | React-Komponenten für Personen: `Avatar`, `CurrentUserMenu`, `PeoplePicker`, `PersonCard`, `SignInPage`, `AccessDenied`, Daten aus Microsoft Graph im Browser |
 | [`Bfs.Seed.Mcp`](dotnet/src/Bfs.Seed.Mcp) | nuget.org | `AddSeedMcp()`: MCP-Server unter `/api/mcp` mit Metadaten nach RFC 9728, Werkzeuge per Attribut, Capabilities je Werkzeug |
@@ -15,6 +15,8 @@ Code-Bausteine für Projekte aus dem [Sentinel-Seed-Template](https://github.com
 | [`Bfs.Seed.Extension`](dotnet/src/Bfs.Seed.Extension) | nuget.org | `AddSeedExtensionUpdates()`: Update-Endpunkt einer selbst gehosteten Browser-Erweiterung (`/api/extension/updates.xml`, signierte CRX aus dem Container `extension`), für die Verteilung per Intune |
 
 `Bfs.Seed.OpenApi` wirkt beim Build: Das Paket bringt neben der Bibliothek ein Export-Werkzeug (`tools/`) und ein MSBuild-Target (`build/`) mit. Das Werkzeug ist kein eigenes Paket; sein Projekt `Bfs.Seed.OpenApi.Export` ist nicht packbar.
+
+`Bfs.Seed.Auth` wirkt ebenfalls beim Build: Es bringt einen Roslyn-Analyzer mit (`analyzers/dotnet/cs/`), der in jedem Projekt mit `Bfs.Seed.Auth` oder `Bfs.Seed.Mcp` läuft. Sein Projekt `Bfs.Seed.Analyzers` (netstandard2.0) ist nicht packbar; Regeln und Diagnose-IDs stehen in der [README von Bfs.Seed.Auth](dotnet/src/Bfs.Seed.Auth/README.md#regeln-im-build-analyzer). Neue Regeln kommen in `AnalyzerReleases.Unshipped.md`, beim Release nach `AnalyzerReleases.Shipped.md`.
 
 ## Entwickeln
 

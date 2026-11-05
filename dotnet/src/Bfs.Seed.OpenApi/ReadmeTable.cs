@@ -68,17 +68,17 @@ internal static class ReadmeTable
         var bom = bytes.AsSpan().StartsWith(Bom);
         var text = Utf8.GetString(bom ? bytes[Bom.Length..] : bytes);
 
-        var start = text.IndexOf(StartMarker, StringComparison.Ordinal);
-        var end = start < 0 ? -1 : text.IndexOf(EndMarker, start + StartMarker.Length, StringComparison.Ordinal);
-        if (end < 0)
+        if (FindMarkers(text) is not { } markers)
         {
-            return new(SeedOpenApiCodes.EndpointTableMarkers, $"{fullPath}: Marker {StartMarker} und danach {EndMarker} fehlen; Endpunkt-Tabelle nicht geschrieben");
+            return new(SeedOpenApiCodes.EndpointTableMarkers, $"{fullPath}: Marker {StartMarker} und danach {EndMarker} fehlen, je auf einer eigenen Zeile außerhalb von Codeblöcken; Endpunkt-Tabelle nicht geschrieben");
         }
+
+        var (start, end) = markers;
 
         // Leerzeilen um die Tabelle: So endet sie in jedem Markdown-Renderer vor dem Marker.
         var newline = text.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
         var block = newline + newline + table.ReplaceLineEndings(newline) + newline + newline;
-        var current = text[(start + StartMarker.Length)..end];
+        var current = text[start..end];
         if (Normalize(current) == Normalize(block))
         {
             return null;
@@ -89,8 +89,41 @@ internal static class ReadmeTable
             return new(SeedOpenApiCodes.EndpointTableOutdated, $"{fullPath}: Endpunkt-Tabelle veraltet; lokal bauen und die Datei committen");
         }
 
-        var updated = string.Concat(text.AsSpan(0, start + StartMarker.Length), block, text.AsSpan(end));
+        var updated = string.Concat(text.AsSpan(0, start), block, text.AsSpan(end));
         File.WriteAllBytes(fullPath, [.. bom ? Bom : [], .. Utf8.GetBytes(updated)]);
+        return null;
+    }
+
+    /// <summary>
+    /// Bereich zwischen den Markern: vom Ende des Start-Markers bis zum Anfang des End-Markers, oder null.
+    /// Gilt nur je auf einer eigenen Zeile außerhalb von Codeblöcken (``` oder ~~~): Eine README, die die
+    /// Marker als Beispiel zeigt, bekommt die Tabelle nicht in ihr Beispiel geschrieben.
+    /// </summary>
+    private static (int Start, int End)? FindMarkers(string text)
+    {
+        int? start = null;
+        char? fence = null;
+        for (var lineStart = 0; lineStart <= text.Length;)
+        {
+            var lineEnd = text.IndexOf('\n', lineStart);
+            lineEnd = lineEnd < 0 ? text.Length : lineEnd;
+            var line = text[lineStart..lineEnd].Trim();
+            if (line.StartsWith("```", StringComparison.Ordinal) || line.StartsWith("~~~", StringComparison.Ordinal))
+            {
+                fence = fence is null ? line[0] : fence == line[0] ? null : fence;
+            }
+            else if (fence is null && start is null && line == StartMarker)
+            {
+                start = text.IndexOf(StartMarker, lineStart, StringComparison.Ordinal) + StartMarker.Length;
+            }
+            else if (fence is null && start is not null && line == EndMarker)
+            {
+                return (start.Value, text.IndexOf(EndMarker, lineStart, StringComparison.Ordinal));
+            }
+
+            lineStart = lineEnd + 1;
+        }
+
         return null;
     }
 

@@ -118,10 +118,23 @@ public class ReadmeTableTests
         Assert.Null(ReadmeTable.Update(path, Table, check: true));
     }
 
+    [Fact]
+    public void MarkersInCodeBlock_AreOnlyAnExample()
+    {
+        var example = $"Beispiel:\n\n```markdown\n{Start}\n{End}\n```\n\n~~~\n{Start}\n~~~\n\n";
+        var path = Readme($"{example}## Endpunkte\n\n  {Start}\n{End}\n");
+
+        Assert.Null(ReadmeTable.Update(path, Table, check: false));
+
+        Assert.Equal($"{example}## Endpunkte\n\n  {Start}\n\n{Table}\n\n{End}\n", File.ReadAllText(path));
+    }
+
     [Theory]
     [InlineData("Ohne Marker\n")]
     [InlineData($"{Start}\nnur der Anfang\n")]
     [InlineData($"{End}\nverkehrt\n{Start}\n")]
+    [InlineData($"Text {Start}\n{End}\n")]
+    [InlineData($"```\n{Start}\n{End}\n```\n")]
     public void MissingMarkers_GiveWarningWithoutChange(string content)
     {
         var path = Readme(content);
@@ -129,7 +142,7 @@ public class ReadmeTableTests
         var warning = ReadmeTable.Update(path, Table, check: false);
 
         Assert.Equal("SEEDOPENAPI016", warning?.Code);
-        Assert.Equal($"{path}: Marker {Start} und danach {End} fehlen; Endpunkt-Tabelle nicht geschrieben", warning?.Message);
+        Assert.Equal($"{path}: Marker {Start} und danach {End} fehlen, je auf einer eigenen Zeile außerhalb von Codeblöcken; Endpunkt-Tabelle nicht geschrieben", warning?.Message);
         Assert.Equal(content, File.ReadAllText(path));
     }
 

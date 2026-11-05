@@ -37,6 +37,20 @@ public sealed class OpenApiOperationAttribute(string operationId, string summary
 
     /// <summary>Sichtbarkeit im Connector.</summary>
     public OpenApiVisibility Visibility { get; set; }
+
+    /// <summary>
+    /// Veraltet: <c>deprecated: true</c> an der Operation. Der Designer der Power Platform bietet
+    /// sie für neue Flows nicht mehr an; bestehende Flows laufen weiter. Wie <c>[Obsolete]</c> an
+    /// der Methode, aber ohne Compiler-Warnung in Tests, die die Methode aufrufen.
+    /// </summary>
+    public bool Deprecated { get; set; }
+
+    /// <summary>
+    /// Hinweis zur Ablösung, etwa welche Operation stattdessen gilt; steht vorn in der
+    /// <c>description</c>. Setzt <see cref="Deprecated"/> mit. Ohne Angabe gilt der Text aus
+    /// <c>[Obsolete]</c>, falls vorhanden.
+    /// </summary>
+    public string? DeprecationMessage { get; set; }
 }
 
 /// <summary>Body der Anfrage als JSON des angegebenen Typs.</summary>

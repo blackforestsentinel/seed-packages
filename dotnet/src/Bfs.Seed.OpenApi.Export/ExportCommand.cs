@@ -8,13 +8,15 @@ namespace Bfs.Seed.OpenApi.Export;
 /// (App.deps.json) in einen eigenen Ladekontext und ruft dort <c>SeedOpenApiDocument.Export</c>
 /// aus der Bfs.Seed.OpenApi-Version der App auf. Kein Functions-Host, keine App-Settings, kein
 /// Program.cs der App. Hinweise und Fehler gehen im kanonischen Format an MSBuild, das sie als
-/// Warnung oder Fehler mit Code anzeigt.
+/// Warnung oder Fehler mit Code anzeigt. Mit <c>--readme</c> schreibt es zusätzlich die
+/// Endpunkt-Tabelle in die Datei, mit <c>--check</c> prüft es sie nur (CI).
 /// </summary>
 internal static class ExportCommand
 {
     private const string Origin = "Bfs.Seed.OpenApi";
     private const string Library = "Bfs.Seed.OpenApi";
     private const string ExportFailed = "SEEDOPENAPI199";
+    private const string Usage = "Aufruf: dotnet Bfs.Seed.OpenApi.Export.dll <App.dll> <openapi.json> [--readme <README.md> [--check]]";
 
     /// <summary>
     /// 0 bei Erfolg, 1 bei einem Fehler (immer im kanonischen Format gemeldet, darauf verlässt sich
@@ -22,14 +24,15 @@ internal static class ExportCommand
     /// </summary>
     public static int Run(string[] args, TextWriter output, TextWriter error)
     {
-        if (args.Length != 2)
+        if (Parse(args) is not { } arguments)
         {
-            error.WriteLine("Aufruf: dotnet Bfs.Seed.OpenApi.Export.dll <App.dll> <openapi.json>");
+            error.WriteLine(Usage);
             return 2;
         }
 
-        var appPath = Path.GetFullPath(args[0]);
-        var outputPath = Path.GetFullPath(args[1]);
+        var (appArgument, outputArgument, readme, check) = arguments;
+        var appPath = Path.GetFullPath(appArgument);
+        var outputPath = Path.GetFullPath(outputArgument);
         if (!File.Exists(appPath))
         {
             output.WriteLine($"{Origin} : error {ExportFailed}: App-Assembly {appPath} fehlt");
@@ -39,12 +42,15 @@ internal static class ExportCommand
         try
         {
             var context = new AppLoadContext(appPath);
-            var app = context.LoadFromAssemblyPath(appPath);
+            var appAssembly = context.LoadFromAssemblyPath(appPath);
             var library = context.LoadFromAssemblyName(new AssemblyName(Library));
-            var export = library.GetType($"{Library}.SeedOpenApiDocument")?.GetMethod("Export", [typeof(Assembly), typeof(string)])
-                ?? throw new InvalidOperationException($"{Library} {library.GetName().Version} in der App kennt SeedOpenApiDocument.Export nicht; Paketversion prüfen");
+            // Ohne README die alte Signatur: Sie gibt es in jeder Version der Bibliothek.
+            Type[] signature = readme is null ? [typeof(Assembly), typeof(string)] : [typeof(Assembly), typeof(string), typeof(string), typeof(bool)];
+            var export = library.GetType($"{Library}.SeedOpenApiDocument")?.GetMethod("Export", signature)
+                ?? throw new InvalidOperationException($"{Library} {library.GetName().Version} in der App kennt SeedOpenApiDocument.Export({signature.Length} Parameter) nicht; Paketversion prüfen");
 
-            var warnings = (string[])export.Invoke(null, [app, outputPath])!;
+            object?[] parameters = readme is null ? [appAssembly, outputPath] : [appAssembly, outputPath, Path.GetFullPath(readme), check];
+            var warnings = (string[])export.Invoke(null, parameters)!;
             foreach (var warning in warnings)
             {
                 output.WriteLine($"{Origin} : warning {warning}");
@@ -68,6 +74,34 @@ internal static class ExportCommand
             error.WriteLine(cause);
             return 1;
         }
+    }
+
+    /// <summary><c>&lt;App.dll&gt; &lt;openapi.json&gt; [--readme &lt;Datei&gt; [--check]]</c>; null bei anderem Aufruf.</summary>
+    private static (string App, string Output, string? Readme, bool Check)? Parse(string[] args)
+    {
+        if (args.Length < 2 || args[0].StartsWith("--", StringComparison.Ordinal) || args[1].StartsWith("--", StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        string? readme = null;
+        var check = false;
+        for (var i = 2; i < args.Length; i++)
+        {
+            switch (args[i])
+            {
+                case "--readme" when readme is null && i + 1 < args.Length && args[i + 1].Length > 0:
+                    readme = args[++i];
+                    break;
+                case "--check" when !check:
+                    check = true;
+                    break;
+                default:
+                    return null;
+            }
+        }
+
+        return check && readme is null ? null : (args[0], args[1], readme, check);
     }
 
     /// <summary>

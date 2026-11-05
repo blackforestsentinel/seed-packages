@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Globalization;
 using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -18,6 +19,9 @@ internal sealed class SwaggerSchemas(JsonSerializerOptions serializerOptions, Li
         ["$schema", "$id", "$comment", "$anchor", "$defs", "prefixItems", "unevaluatedProperties", "dependentRequired", "propertyNames"];
 
     private static readonly string[] ParameterKeywords = ["type", "format", "enum", "pattern"];
+
+    /// <summary>Anzeigetexte für Werte aus <c>enum</c>; die Power Platform zeigt sie in der Auswahl.</summary>
+    internal const string EnumValuesKey = "x-ms-enum-values";
 
     private readonly Dictionary<Type, string> names = [];
     private readonly Dictionary<string, JsonNode> definitions = new(StringComparer.Ordinal);
@@ -54,6 +58,11 @@ internal sealed class SwaggerSchemas(JsonSerializerOptions serializerOptions, Li
     {
         // Objekte und Listen gar nicht erst exportieren: Ihre Definitionen würden sonst ungenutzt im Dokument landen.
         var underlying = Nullable.GetUnderlyingType(type) ?? type;
+        if (ParameterEnum(underlying) is { } enumType)
+        {
+            return EnumParameter(enumType, where);
+        }
+
         var schema = serializerOptions.GetTypeInfo(underlying).Kind == JsonTypeInfoKind.None ? Export(underlying) : new JsonObject();
         var result = new JsonObject();
         var kind = schema["type"]?.GetValue<string>();
@@ -72,6 +81,39 @@ internal sealed class SwaggerSchemas(JsonSerializerOptions serializerOptions, Li
             }
         }
 
+        return result;
+    }
+
+    /// <summary>Enum, nullbares Enum oder Liste davon; sonst null.</summary>
+    private Type? ParameterEnum(Type type)
+    {
+        if (type.IsEnum)
+        {
+            return type;
+        }
+
+        var info = serializerOptions.GetTypeInfo(type);
+        var element = info.Kind == JsonTypeInfoKind.Enumerable ? info.ElementType : null;
+        element = element is null ? null : Nullable.GetUnderlyingType(element) ?? element;
+        return element is { IsEnum: true } ? element : null;
+    }
+
+    /// <summary>
+    /// Pfad und Query sind Text, kein JSON: Die Function liest ein Enum mit <c>Enum.TryParse</c> und
+    /// kennt nur die Namen im Code. Deshalb immer string mit diesen Namen, unabhängig vom JsonConverter
+    /// und von <c>[JsonStringEnumMemberName]</c>. Eine Liste wird zu einem Wert aus der Auswahl.
+    /// </summary>
+    private JsonObject EnumParameter(Type enumType, string where)
+    {
+        var result = new JsonObject { ["type"] = "string" };
+        var names = Enum.GetNames(enumType);
+        if (names.Length == 0)
+        {
+            warnings.Add(EnumWithoutValues(where, enumType, "es hat keine Werte"));
+            return result;
+        }
+
+        result["enum"] = new JsonArray([.. names.Select(n => (JsonNode)n)]);
         return result;
     }
 
@@ -94,9 +136,21 @@ internal sealed class SwaggerSchemas(JsonSerializerOptions serializerOptions, Li
             return Ref(context.TypeInfo.Type);
         }
 
+        var enumType = Nullable.GetUnderlyingType(context.TypeInfo.Type) ?? context.TypeInfo.Type;
         if (node is not JsonObject schema)
         {
+            // Eigener JsonConverter am Enum: Das Schema ist offen (true), Werte kennt nur der Converter.
+            if (enumType.IsEnum)
+            {
+                warnings.Add(EnumWithoutValues(PropertyName(context), enumType, "System.Text.Json nennt keine Werte, etwa bei einem eigenen JsonConverter"));
+            }
+
             return node;
+        }
+
+        if (enumType.IsEnum)
+        {
+            AddEnumValues(schema, enumType, PropertyName(context));
         }
 
         if (Format(context.TypeInfo.Type) is { } format && !schema.ContainsKey("format"))
@@ -136,6 +190,65 @@ internal sealed class SwaggerSchemas(JsonSerializerOptions serializerOptions, Li
             ?? (property?.AttributeProvider is MemberInfo member ? documentation.Summary(member) : null)
             ?? (parameter is not null ? documentation.Parameter(parameter) : null);
     }
+
+    /// <summary>
+    /// Enum im JSON: Mit JsonStringEnumConverter liefert System.Text.Json die Namen schon als <c>enum</c>.
+    /// Ohne Converter ist es eine Zahl ohne Liste; dann kommen die Zahlen als <c>enum</c> dazu und die
+    /// Namen als Anzeigetext in <c>x-ms-enum-values</c>, sonst zeigt der Connector nur ein Zahlenfeld.
+    /// </summary>
+    private void AddEnumValues(JsonObject schema, Type enumType, string? where)
+    {
+        if (schema["enum"] is JsonArray { Count: > 0 } existing && existing.Any(v => v is not null))
+        {
+            return;
+        }
+
+        var integer = schema["type"] switch
+        {
+            JsonValue type => type.GetValue<string>() == "integer",
+            JsonArray types => types.Any(t => t?.GetValue<string>() == "integer"),
+            _ => false,
+        };
+        if (!integer)
+        {
+            warnings.Add(EnumWithoutValues(where, enumType, "System.Text.Json nennt keine Werte, etwa bei [Flags] mit JsonStringEnumConverter"));
+            return;
+        }
+
+        // Gleiche Zahl unter mehreren Namen: Die Power Platform erlaubt je Wert nur einen Anzeigetext; der erste gilt.
+        var names = Enum.GetNames(enumType);
+        var values = Enum.GetValuesAsUnderlyingType(enumType);
+        var seen = new HashSet<object>();
+        var enumValues = new JsonArray();
+        var displayValues = new JsonArray();
+        for (var i = 0; i < names.Length; i++)
+        {
+            var value = values.GetValue(i)!;
+            if (seen.Add(value))
+            {
+                enumValues.Add(Number(value));
+                displayValues.Add(new JsonObject { ["value"] = Number(value), ["displayName"] = names[i] });
+            }
+        }
+
+        if (enumValues.Count == 0)
+        {
+            warnings.Add(EnumWithoutValues(where, enumType, "es hat keine Werte"));
+            return;
+        }
+
+        schema["enum"] = enumValues;
+        schema[EnumValuesKey] = displayValues;
+    }
+
+    private static JsonNode Number(object value) =>
+        value is ulong large ? JsonValue.Create(large) : JsonValue.Create(Convert.ToInt64(value, CultureInfo.InvariantCulture));
+
+    private static SeedOpenApiWarning EnumWithoutValues(string? where, Type enumType, string reason) =>
+        new(SeedOpenApiCodes.EnumWithoutValues, $"{(where is null ? "" : where + ": ")}Enum {enumType.Name} ohne Werteliste, {reason}; der Connector zeigt keine Auswahl");
+
+    private static string? PropertyName(JsonSchemaExporterContext context) =>
+        context.PropertyInfo is { } property ? $"{property.DeclaringType.Name}.{property.Name}" : null;
 
     /// <summary><see cref="OpenApiDynamicValuesAttribute"/> an der Eigenschaft, höchstens eines und ohne Parameternamen.</summary>
     private static OpenApiDynamicValuesAttribute? DynamicValuesAttribute(JsonPropertyInfo? property)

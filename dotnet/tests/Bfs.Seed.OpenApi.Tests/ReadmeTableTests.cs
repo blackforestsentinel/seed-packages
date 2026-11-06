@@ -46,11 +46,21 @@ public class ReadmeTableTests
     }
 
     [Fact]
-    public void EndpointTable_EscapesPipesAndLineBreaksWithoutBasePath()
+    public void EndpointTable_EscapesTextThatWouldBreakTheTableWithoutBasePath()
     {
+        // Senkrechter Strich, Zeilenumbruch, Backtick und < (HTML, also auch ein Marker) wirken nicht.
         var result = TestDocuments.For(new SeedOpenApiOptions { RoutePrefix = "" }, typeof(TableEdgeCaseFunctions));
+        var table = result.EndpointTable();
 
-        Assert.EndsWith("| GET | `/piped` | `Piped` | Ein \\| im Titel | – | ja: Zeile eins Zeile \\| zwei |", result.EndpointTable(), StringComparison.Ordinal);
+        Assert.EndsWith(
+            "| GET | `/piped` | `Piped` | Ein \\| im \\`Titel\\` &lt;b> | – | ja: Zeile eins Zeile \\| zwei &lt;!-- seed:endpoints:end --> |",
+            table,
+            StringComparison.Ordinal);
+
+        var path = Readme($"{Start}\n{End}\nDanach.\n");
+        Assert.Null(ReadmeTable.Update(path, table, check: false));
+        Assert.Null(ReadmeTable.Update(path, table, check: true));
+        Assert.EndsWith($"\n\n{End}\nDanach.\n", File.ReadAllText(path), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -165,11 +175,28 @@ public class ReadmeTableTests
         var readme = Readme($"{Start}\n{End}\n");
         var output = Path.Combine(Directory(), "openapi.json");
 
-        var warnings = SeedOpenApiDocument.Export(typeof(OrderFunctions).Assembly, output, readme, checkReadme: false);
+        // Die Test-App warnt nur mit SEEDOPENAPI006; als Meldung abgeschaltet zählt das nicht.
+        var warnings = SeedOpenApiDocument.Export(typeof(OrderFunctions).Assembly, output, readme, checkReadme: false, ["SEEDOPENAPI006"]);
 
         Assert.Equal("SEEDOPENAPI006", Assert.Single(warnings)[..14]);
         Assert.Contains("| GET | `/v1/health` | `GetHealth` |", File.ReadAllText(readme), StringComparison.Ordinal);
-        Assert.True(File.GetLastWriteTimeUtc(output) >= File.GetLastWriteTimeUtc(readme));
+    }
+
+    [Fact]
+    public void Export_WithWarnings_LeavesReadmeAloneButStillChecks()
+    {
+        // Was der Build bemängelt, landet nicht in der README; die CI prüft trotzdem.
+        var content = $"{Start}\n{End}\n";
+        var readme = Readme(content);
+        var output = Path.Combine(Directory(), "openapi.json");
+
+        var local = SeedOpenApiDocument.Export(typeof(OrderFunctions).Assembly, output, readme, checkReadme: false, []);
+        Assert.Equal("SEEDOPENAPI006", Assert.Single(local)[..14]);
+        Assert.Equal(content, File.ReadAllText(readme));
+        Assert.True(File.Exists(output));
+
+        var check = SeedOpenApiDocument.Export(typeof(OrderFunctions).Assembly, output, readme, checkReadme: true, []);
+        Assert.Equal(["SEEDOPENAPI006", "SEEDOPENAPI015"], check.Select(w => w[..14]));
     }
 
     [Fact]
@@ -179,17 +206,23 @@ public class ReadmeTableTests
         var readme = Readme($"{Start}\n{End}\n");
         var output = Path.Combine(Directory(), "openapi.json");
 
-        var check = Run([app, output, "--readme", readme, "--check"]);
-        Assert.Equal(0, check.ExitCode);
+        // Exit-Code 3: geschrieben, aber mit Warnung; das Target hält das Ergebnis dann nicht für aktuell.
+        var check = Run([app, output, "--readme", readme, "--check", "--quiet", "SEEDOPENAPI006"]);
+        Assert.Equal(ExportCommand.Warned, check.ExitCode);
         Assert.Contains($"Bfs.Seed.OpenApi : warning SEEDOPENAPI015: {readme}: Endpunkt-Tabelle veraltet; lokal bauen und die Datei committen", check.Output);
         Assert.Equal($"{Start}\n{End}\n", File.ReadAllText(readme));
 
-        var update = Run([app, output, "--readme", readme]);
+        // Ohne abgeschaltete SEEDOPENAPI006 zählt deren Warnung: README bleibt, Exit-Code 3.
+        var warned = Run([app, output, "--readme", readme]);
+        Assert.Equal(ExportCommand.Warned, warned.ExitCode);
+        Assert.Equal($"{Start}\n{End}\n", File.ReadAllText(readme));
+
+        var update = Run([app, output, "--readme", readme, "--quiet", "CS1591; SEEDOPENAPI006,NU1603"]);
         Assert.Equal(0, update.ExitCode);
-        Assert.DoesNotContain(update.Output, l => l.Contains("SEEDOPENAPI015", StringComparison.Ordinal));
+        Assert.Contains(update.Output, l => l.StartsWith("Bfs.Seed.OpenApi : warning SEEDOPENAPI006:", StringComparison.Ordinal));
         Assert.Contains("`/v1/orders`", File.ReadAllText(readme), StringComparison.Ordinal);
 
-        Assert.DoesNotContain(Run([app, output, "--readme", readme, "--check"]).Output, l => l.Contains("SEEDOPENAPI015", StringComparison.Ordinal));
+        Assert.Equal(0, Run([app, output, "--readme", readme, "--check", "--quiet", "SEEDOPENAPI006"]).ExitCode);
     }
 
     [Theory]
@@ -197,6 +230,8 @@ public class ReadmeTableTests
     [InlineData("--readme")]
     [InlineData("--readme", "a.md", "--readme", "b.md")]
     [InlineData("--readme", "a.md", "--unbekannt")]
+    [InlineData("--quiet")]
+    [InlineData("--quiet", "A", "--quiet", "B")]
     public void Tool_RejectsWrongReadmeArguments(params string[] options)
     {
         var error = new StringWriter();

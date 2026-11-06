@@ -56,12 +56,36 @@ public class DeprecationTests
     }
 
     [Fact]
-    public void SummaryWithMarker_IsCheckedForLength()
+    public void SummaryNearLimit_KeepsTitleAndMarksOnlyDescription()
     {
+        // Mit dem Zusatz wären es 83 Zeichen; der Connector lehnt über 80 ab.
         var result = TestDocuments.For(typeof(DeprecationFunctions));
+        var operation = result.Operation("/long-summary", "get");
 
-        Assert.Contains(new SeedOpenApiWarning("SEEDOPENAPI004", "LongSummary: summary ist länger als 80 Zeichen"), result.Warnings);
+        Assert.Equal("Eine recht lange Zusammenfassung, die fast an die Grenze heranreicht", operation.Text("summary"));
+        Assert.Equal("(deprecated)", operation.Text("description"));
+        Assert.True(operation["deprecated"]!.GetValue<bool>());
+        Assert.DoesNotContain(result.Warnings, w => w.Message.StartsWith("LongSummary:", StringComparison.Ordinal));
         Assert.Empty(SwaggerValidator.Validate(result.Document));
+    }
+
+    [Fact]
+    public void DeprecatedFalse_WinsOverMessageAndObsolete()
+    {
+        var operation = TestDocuments.For(typeof(DeprecationFunctions)).Operation("/not-deprecated", "get");
+
+        Assert.Null(operation["deprecated"]);
+        Assert.Null(operation["description"]);
+        Assert.Equal("Nicht veraltet", operation.Text("summary"));
+    }
+
+    [Fact]
+    public void DeprecatedProperty_FollowsMessageUnlessSetExplicitly()
+    {
+        Assert.False(new OpenApiOperationAttribute("A", "a").Deprecated);
+        Assert.True(new OpenApiOperationAttribute("A", "a") { DeprecationMessage = "Stattdessen B." }.Deprecated);
+        Assert.False(new OpenApiOperationAttribute("A", "a") { DeprecationMessage = "Stattdessen B.", Deprecated = false }.Deprecated);
+        Assert.True(new OpenApiOperationAttribute("A", "a") { Deprecated = true }.Deprecated);
     }
 
     [Fact]

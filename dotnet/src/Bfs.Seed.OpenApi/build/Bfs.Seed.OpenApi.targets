@@ -35,6 +35,18 @@
       <_SeedOpenApiArguments>&quot;$(TargetPath)&quot; &quot;$(_SeedOpenApiFile)&quot;</_SeedOpenApiArguments>
       <_SeedOpenApiArguments Condition="'$(_SeedOpenApiReadmeFile)' != ''">$(_SeedOpenApiArguments) --readme &quot;$(_SeedOpenApiReadmeFile)&quot;</_SeedOpenApiArguments>
       <_SeedOpenApiArguments Condition="'$(_SeedOpenApiReadmeFile)' != '' AND '$(_SeedOpenApiReadmeCheck)' == 'true'">$(_SeedOpenApiArguments) --check</_SeedOpenApiArguments>
+      <!--
+        Codes, die der Build als Meldung abschaltet, zählen für das Werkzeug nicht als Warnung. Nur
+        Buchstaben und Ziffern, damit die Kommandozeile heil bleibt.
+      -->
+      <_SeedOpenApiQuiet>$([System.Text.RegularExpressions.Regex]::Replace('$(MSBuildWarningsAsMessages);$(NoWarn)', '[^A-Za-z0-9]+', ';').Trim(';'))</_SeedOpenApiQuiet>
+      <_SeedOpenApiArguments Condition="'$(_SeedOpenApiQuiet)' != ''">$(_SeedOpenApiArguments) --quiet &quot;$(_SeedOpenApiQuiet)&quot;</_SeedOpenApiArguments>
+      <!--
+        Ergebnis gilt nur nach einem Lauf ohne Warnung als aktuell. Sonst liefe der nächste Build
+        nicht, und Warnungen wie SEEDOPENAPI015 (Tabelle veraltet) verschwänden ohne Änderung,
+        etwa bei einem zweiten CI-Lauf ohne clean.
+      -->
+      <_SeedOpenApiStamp>$([MSBuild]::NormalizePath('$(MSBuildProjectDirectory)', '$(IntermediateOutputPath)', 'seed-openapi.stamp'))</_SeedOpenApiStamp>
     </PropertyGroup>
 
     <!--
@@ -55,16 +67,17 @@
           DependsOnTargets="_SeedOpenApiPaths"
           Condition="'$(SeedOpenApiEnabled)' == 'true' AND '$(DesignTimeBuild)' != 'true'"
           Inputs="@(_SeedOpenApiInput)"
-          Outputs="$(_SeedOpenApiFile)">
+          Outputs="$(_SeedOpenApiFile);$(_SeedOpenApiStamp)">
     <Error Condition="!Exists('$(SeedOpenApiTool)')" Code="SEEDOPENAPI199" Text="openapi.json nicht erzeugt: Werkzeug $(SeedOpenApiTool) fehlt." />
 
     <!--
       Warnungen und Fehler schreibt das Werkzeug im kanonischen Format (SEEDOPENAPI…), Exec gibt sie
-      an MSBuild weiter. Exit-Code 1 heißt: Fehler gemeldet. -1 setzt Exec, wenn MSBuild eine Warnung
-      zum Fehler gemacht hat (MSBuildTreatWarningsAsErrors); auch dann steht die Meldung schon im Log.
-      Den Code werten wir selbst aus, damit MSB3073 die Meldung nicht doppelt; jeder andere Code
-      heißt, dass dotnet selbst gescheitert ist.
+      an MSBuild weiter. Exit-Code 0: ohne Warnung, 3: mit Warnung, 1: Fehler gemeldet. -1 setzt Exec,
+      wenn MSBuild eine Warnung zum Fehler gemacht hat (MSBuildTreatWarningsAsErrors); auch dann steht
+      die Meldung schon im Log. Den Code werten wir selbst aus, damit MSB3073 die Meldung nicht doppelt;
+      jeder andere Code heißt, dass dotnet selbst gescheitert ist.
     -->
+    <Delete Files="$(_SeedOpenApiStamp)" />
     <PropertyGroup>
       <_SeedOpenApiReadmeBefore Condition="'$(_SeedOpenApiReadmeFile)' != '' AND Exists('$(_SeedOpenApiReadmeFile)')">$([System.IO.File]::GetLastWriteTime('$(_SeedOpenApiReadmeFile)').Ticks)</_SeedOpenApiReadmeBefore>
     </PropertyGroup>
@@ -75,16 +88,20 @@
           IgnoreExitCode="true">
       <Output TaskParameter="ExitCode" PropertyName="_SeedOpenApiExitCode" />
     </Exec>
-    <Error Condition="'$(_SeedOpenApiExitCode)' != '0' AND '$(_SeedOpenApiExitCode)' != '1' AND '$(_SeedOpenApiExitCode)' != '-1'"
+    <Error Condition="'$(_SeedOpenApiExitCode)' != '0' AND '$(_SeedOpenApiExitCode)' != '3' AND '$(_SeedOpenApiExitCode)' != '1' AND '$(_SeedOpenApiExitCode)' != '-1'"
            Code="SEEDOPENAPI199"
            Text="openapi.json nicht erzeugt: dotnet endete mit Code $(_SeedOpenApiExitCode). Das Werkzeug braucht .NET und ASP.NET Core 10 oder neuer; abschalten mit SeedOpenApiEnabled=false." />
-    <Message Condition="'$(_SeedOpenApiExitCode)' == '0'" Importance="high" Text="$(MSBuildProjectName) -> $(_SeedOpenApiFile)" />
+    <Message Condition="'$(_SeedOpenApiExitCode)' == '0' OR '$(_SeedOpenApiExitCode)' == '3'" Importance="high" Text="$(MSBuildProjectName) -> $(_SeedOpenApiFile)" />
+    <Touch Condition="'$(_SeedOpenApiExitCode)' == '0'" Files="$(_SeedOpenApiStamp)" AlwaysCreate="true" />
 
     <!-- Das Werkzeug schreibt die README nur, wenn sich die Tabelle ändert; dann sagen wir es. -->
     <PropertyGroup>
       <_SeedOpenApiReadmeAfter Condition="'$(_SeedOpenApiReadmeBefore)' != '' AND Exists('$(_SeedOpenApiReadmeFile)')">$([System.IO.File]::GetLastWriteTime('$(_SeedOpenApiReadmeFile)').Ticks)</_SeedOpenApiReadmeAfter>
     </PropertyGroup>
     <Message Condition="'$(_SeedOpenApiReadmeAfter)' != '' AND '$(_SeedOpenApiReadmeAfter)' != '$(_SeedOpenApiReadmeBefore)'" Importance="high" Text="$(MSBuildProjectName) -> $(_SeedOpenApiReadmeFile) (Endpunkt-Tabelle aktualisiert)" />
+    <Message Condition="'$(_SeedOpenApiReadmeFile)' != '' AND '$(_SeedOpenApiReadmeCheck)' != 'true' AND ('$(_SeedOpenApiExitCode)' == '3' OR '$(_SeedOpenApiExitCode)' == '-1') AND '$(_SeedOpenApiReadmeAfter)' == '$(_SeedOpenApiReadmeBefore)'"
+             Importance="high"
+             Text="$(MSBuildProjectName): Endpunkt-Tabelle in $(_SeedOpenApiReadmeFile) nicht geschrieben, solange der Export warnt" />
   </Target>
 
   <Target Name="SeedOpenApiPublish"
@@ -98,7 +115,7 @@
   </Target>
 
   <Target Name="_SeedOpenApiClean" AfterTargets="Clean" DependsOnTargets="_SeedOpenApiPaths" Condition="'$(SeedOpenApiEnabled)' == 'true'">
-    <Delete Files="$(_SeedOpenApiFile)" />
+    <Delete Files="$(_SeedOpenApiFile);$(_SeedOpenApiStamp)" />
   </Target>
 
 </Project>

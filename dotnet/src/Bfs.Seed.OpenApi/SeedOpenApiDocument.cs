@@ -56,18 +56,20 @@ public static partial class SeedOpenApiDocument
     /// <exception cref="SeedOpenApiException">
     /// Eine operationId oder Methode und Pfad gibt es mehrfach, oder <see cref="OpenApiDynamicValuesAttribute"/> passt nicht.
     /// </exception>
-    public static string[] Export(Assembly assembly, string outputPath) => Export(assembly, outputPath, null, false);
+    public static string[] Export(Assembly assembly, string outputPath) => Export(assembly, outputPath, null, false, []);
 
     /// <summary>
     /// Wie <see cref="Export(Assembly, string)"/>, dazu die Endpunkt-Tabelle in <paramref name="readmePath"/>
-    /// zwischen den Markern <c>&lt;!-- seed:endpoints:start --&gt;</c> und <c>&lt;!-- seed:endpoints:end --&gt;</c>:
-    /// schreiben oder mit <paramref name="checkReadme"/> nur prüfen (CI). Aufruf durch das Werkzeug
-    /// Bfs.Seed.OpenApi.Export beim Build; Signatur deshalb nicht ändern.
+    /// zwischen den Markern <c>&lt;!-- seed:endpoints:start --&gt;</c> und <c>&lt;!-- seed:endpoints:end --&gt;</c>.
+    /// Mit <paramref name="checkReadme"/> nur prüfen (CI). Sonst schreiben, aber nur, wenn das Dokument
+    /// ohne Warnung entsteht; Codes aus <paramref name="quietCodes"/> (im Build als Meldung abgeschaltet)
+    /// zählen dabei nicht. Aufruf durch das Werkzeug Bfs.Seed.OpenApi.Export beim Build; Signatur
+    /// deshalb nicht ändern.
     /// </summary>
     /// <exception cref="SeedOpenApiException">
     /// Eine operationId oder Methode und Pfad gibt es mehrfach, oder <see cref="OpenApiDynamicValuesAttribute"/> passt nicht.
     /// </exception>
-    public static string[] Export(Assembly assembly, string outputPath, string? readmePath, bool checkReadme)
+    public static string[] Export(Assembly assembly, string outputPath, string? readmePath, bool checkReadme, string[] quietCodes)
     {
         ArgumentNullException.ThrowIfNull(assembly);
         ArgumentException.ThrowIfNullOrEmpty(outputPath);
@@ -86,8 +88,11 @@ public static partial class SeedOpenApiDocument
             warnings.Add(new(SeedOpenApiCodes.TooLarge, "openapi.json ist größer als 1 MB; der Custom Connector lehnt das ab"));
         }
 
-        // Vor openapi.json: Die README ist Eingabe des Targets; wäre sie neuer als die Ausgabe, liefe der Export beim nächsten Build erneut.
-        if (!string.IsNullOrEmpty(readmePath) && ReadmeTable.Update(readmePath, result.EndpointTable(), checkReadme) is { } readmeWarning)
+        // Lokal nur aus einem Dokument ohne Warnung: Was der Build bemängelt, etwa eine halb fertige
+        // Function, soll nicht in der README landen. Die CI prüft immer.
+        var quiet = new HashSet<string>(quietCodes ?? [], StringComparer.OrdinalIgnoreCase);
+        var clean = warnings.All(w => quiet.Contains(w.Code));
+        if (!string.IsNullOrEmpty(readmePath) && (checkReadme || clean) && ReadmeTable.Update(readmePath, result.EndpointTable(), checkReadme) is { } readmeWarning)
         {
             warnings.Add(readmeWarning);
         }
@@ -179,6 +184,7 @@ public static partial class SeedOpenApiDocument
             };
         }
 
+        schemas.AddRequestEnumWarnings();
         DynamicValues.Check(document, warnings);
         return new SeedOpenApiResult(document, [.. warnings.Distinct()])
         {
@@ -209,9 +215,12 @@ public static partial class SeedOpenApiDocument
 
         var deprecation = FindDeprecation(function.Method, annotation);
         var summary = annotation?.Summary ?? function.Name;
-        if (deprecation is not null && !summary.Contains(DeprecatedMarker, StringComparison.OrdinalIgnoreCase))
+
+        // Über 80 Zeichen lehnt der Connector die summary ab; dann steht der Zusatz nur in der description.
+        var marked = $"{summary} {DeprecatedMarker}";
+        if (deprecation is not null && !summary.Contains(DeprecatedMarker, StringComparison.OrdinalIgnoreCase) && marked.Length <= 80)
         {
-            summary += " " + DeprecatedMarker;
+            summary = marked;
         }
 
         if (summary.Length > 80)
@@ -302,7 +311,7 @@ public static partial class SeedOpenApiDocument
                 parameter["description"] = body.Description;
             }
 
-            parameter["schema"] = schemas.SchemaFor(body.Type);
+            parameter["schema"] = schemas.SchemaFor(body.Type, request: true);
             parameters.Add(parameter);
         }
 
@@ -378,13 +387,14 @@ public static partial class SeedOpenApiDocument
 
     /// <summary>
     /// Veraltet über <see cref="OpenApiOperationAttribute.Deprecated"/>, <see cref="OpenApiOperationAttribute.DeprecationMessage"/>
-    /// oder <c>[Obsolete]</c> an der Methode, sonst null. <c>[Obsolete]</c> an der Klasse zählt nicht: Der Code,
-    /// den das Functions-SDK für den Aufruf erzeugt, bekäme dafür CS0618 und bräche den Build.
+    /// oder <c>[Obsolete]</c> an der Methode, sonst null; <c>Deprecated = false</c> geht allem vor.
+    /// <c>[Obsolete]</c> an der Klasse zählt nicht: Der Code, den das Functions-SDK für den Aufruf
+    /// erzeugt, bekäme dafür CS0618 und bräche den Build.
     /// </summary>
     private static Deprecation? FindDeprecation(MethodInfo method, OpenApiOperationAttribute? annotation)
     {
         var obsolete = method.GetCustomAttribute<ObsoleteAttribute>();
-        if (annotation is not { Deprecated: true } && annotation?.DeprecationMessage is null && obsolete is null)
+        if (annotation?.DeprecatedSetting is false || (annotation is not { Deprecated: true } && obsolete is null))
         {
             return null;
         }

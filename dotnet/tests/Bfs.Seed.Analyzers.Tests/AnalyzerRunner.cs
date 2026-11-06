@@ -25,14 +25,14 @@ internal static class AnalyzerRunner
     /// <see cref="Diagnostic.IsSuppressed"/> dabei, damit Tests auch das prüfen können.
     /// </summary>
     /// <param name="analyzer">Der Analyzer.</param>
-    /// <param name="sources">Quelltexte; der Pfad einer Datei ist <c>Test&lt;n&gt;.cs</c>.</param>
+    /// <param name="files">Pfad und Quelltext je Datei; der Pfad zählt etwa für <c>*.g.cs</c>.</param>
     /// <param name="severities">Wie NoWarn oder .editorconfig: Schwere je ID.</param>
     /// <param name="without">Assemblies, die der Beispielcode nicht referenziert, z. B. <c>Bfs.Seed.Auth</c>.</param>
     public static async Task<IReadOnlyList<Diagnostic>> RunAsync(
-        DiagnosticAnalyzer analyzer, string[] sources, IReadOnlyDictionary<string, ReportDiagnostic>? severities = null, params string[] without)
+        DiagnosticAnalyzer analyzer, (string Path, string Source)[] files, IReadOnlyDictionary<string, ReportDiagnostic>? severities = null, params string[] without)
     {
-        var trees = sources.Select((source, i) => CSharpSyntaxTree.ParseText(
-            source, new CSharpParseOptions(LanguageVersion.Latest), path: $"Test{i}.cs", cancellationToken: TestContext.Current.CancellationToken));
+        var trees = files.Select(file => CSharpSyntaxTree.ParseText(
+            file.Source, new CSharpParseOptions(LanguageVersion.Latest), path: file.Path, cancellationToken: TestContext.Current.CancellationToken));
         var references = AllReferences.Value
             .Where(r => !without.Contains(Path.GetFileNameWithoutExtension(r.Display), StringComparer.OrdinalIgnoreCase));
         var compilation = CSharpCompilation.Create(
@@ -57,7 +57,11 @@ internal static class AnalyzerRunner
     }
 
     public static Task<IReadOnlyList<Diagnostic>> RunAsync(DiagnosticAnalyzer analyzer, string source, params string[] without) =>
-        RunAsync(analyzer, [source], null, without);
+        RunAsync(analyzer, [("Test0.cs", source)], null, without);
+
+    /// <summary>Wie oben mit mehreren Dateien namens <c>Test&lt;n&gt;.cs</c>.</summary>
+    public static Task<IReadOnlyList<Diagnostic>> RunAsync(DiagnosticAnalyzer analyzer, string[] sources, IReadOnlyDictionary<string, ReportDiagnostic>? severities = null) =>
+        RunAsync(analyzer, [.. sources.Select((source, i) => ($"Test{i}.cs", source))], severities);
 
     /// <summary>Die wirksamen, also nicht unterdrückten Diagnosen.</summary>
     public static IReadOnlyList<Diagnostic> Effective(this IReadOnlyList<Diagnostic> diagnostics) =>

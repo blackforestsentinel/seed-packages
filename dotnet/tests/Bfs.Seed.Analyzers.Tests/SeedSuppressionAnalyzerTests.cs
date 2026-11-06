@@ -9,6 +9,9 @@ public class SeedSuppressionAnalyzerTests
     [InlineData("""[SuppressMessage("Performance", "CA1822", Justification = "")]""")]
     [InlineData("""[SuppressMessage("Performance", "CA1822", Justification = "   ")]""")]
     [InlineData("""[SuppressMessage("Performance", "CA1822", Justification = "<Pending>")]""")]
+    [InlineData("""[SuppressMessage("Performance", "CA1822", Justification = "x")]""")]
+    [InlineData("""[SuppressMessage("Performance", "CA1822", Justification = "123456789")]""")]
+    [InlineData("""[SuppressMessage("Performance", "CA1822", Justification = "   kurz ok   ")]""")]
     [InlineData("""[SuppressMessage("Performance", checkId: "CA1822", MessageId = "x")]""")]
     [InlineData("""[System.Diagnostics.CodeAnalysis.SuppressMessageAttribute("Performance", "CA1822")]""")]
     public async Task SuppressMessage_WithoutJustification_IsError(string attribute)
@@ -32,6 +35,7 @@ public class SeedSuppressionAnalyzerTests
     [Theory]
     [InlineData("""[SuppressMessage("Performance", "CA1822", Justification = "Öffentliche API, bleibt Instanzmethode.")]""")]
     [InlineData("""[SuppressMessage("Performance", "CA1822", Justification = Reasons.PublicApi)]""")]
+    [InlineData("""[SuppressMessage("Performance", "CA1822", Justification = "1234567890")]""")]
     [InlineData("""[UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "Typen bleiben über DynamicDependency erhalten.")]""")]
     public async Task Suppression_WithJustification_IsFine(string attribute)
     {
@@ -93,6 +97,49 @@ public class SeedSuppressionAnalyzerTests
     }
 
     [Fact]
+    public async Task ShortJustification_ForSeedRule_IsError_AndNamesTheRule()
+    {
+        var diagnostics = await RunAsync("""
+            using System.Diagnostics.CodeAnalysis;
+
+            [assembly: SuppressMessage("Seed", "SEEDAUTH001", Justification = "x")]
+            """);
+
+        var diagnostic = Assert.Single(diagnostics);
+        Assert.Equal("SEEDSUPPRESS001", diagnostic.Id);
+        Assert.Equal(
+            "[SuppressMessage] für 'SEEDAUTH001' braucht eine Begründung mit mindestens 10 Zeichen. Ergänze Justification = \"…\" mit dem Grund, warum die Meldung hier nicht zutrifft.",
+            diagnostic.GetMessage());
+    }
+
+    [Theory]
+    [InlineData("using SM = System.Diagnostics.CodeAnalysis.SuppressMessageAttribute;", "", "")]
+    [InlineData("", "using SM = System.Diagnostics.CodeAnalysis.SuppressMessageAttribute;", "")]
+    [InlineData("", "", "global using SM = System.Diagnostics.CodeAnalysis.SuppressMessageAttribute;")]
+    public async Task SuppressMessage_UnderAlias_IsFound(string onTop, string inNamespace, string otherFile)
+    {
+        // Der Vorfilter am Namen darf einen Alias nicht übersehen, auch nicht aus einer anderen Datei.
+        var diagnostics = await AnalyzerRunner.RunAsync(new SeedSuppressionAnalyzer(), [
+            $$"""
+            {{onTop}}
+            namespace Orders
+            {
+                {{inNamespace}}
+
+                public sealed class Order
+                {
+                    [SM("Performance", "CA1822")]
+                    public int Count() => 0;
+                }
+            }
+            """,
+            otherFile,
+        ]);
+
+        Assert.Equal("SEEDSUPPRESS001", Assert.Single(diagnostics).Id);
+    }
+
+    [Fact]
     public async Task Rule_CanBeSwitchedOffOnlyWithJustification()
     {
         // Wie jede Ausnahme: per [SuppressMessage] mit Begründung, etwa für Altcode beim Umzug in Seed.
@@ -120,6 +167,8 @@ public class SeedSuppressionAnalyzerTests
     [InlineData("#pragma warning disable CS0168, CS0219", " CS0168, CS0219")]
     [InlineData("#pragma warning disable CS0168 //", " CS0168")]
     [InlineData("#pragma warning disable CS0168 // ---", " CS0168")]
+    [InlineData("#pragma warning disable CS0168 //Grund", " CS0168")]
+    [InlineData("#pragma warning disable CS0168 //     123456789     ", " CS0168")]
     [InlineData("#pragma warning disable CS0168 /* Grund */", " CS0168")]
     [InlineData("#pragma warning disable", "")]
     public async Task Pragma_WithoutComment_IsError(string pragma, string codes)
@@ -144,7 +193,7 @@ public class SeedSuppressionAnalyzerTests
 
     [Theory]
     [InlineData("#pragma warning disable CS0168 // Wird erst im nächsten Schritt gelesen.")]
-    [InlineData("#pragma warning disable CS0168 //Grund")]
+    [InlineData("#pragma warning disable CS0168 //1234567890")]
     [InlineData("#pragma warning disable CS0168, CS0219 // Beispiel für die Doku")]
     public async Task Pragma_WithComment_IsFine(string pragma)
     {

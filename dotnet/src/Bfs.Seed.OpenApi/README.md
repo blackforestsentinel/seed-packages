@@ -141,8 +141,8 @@ Im Dokument steht dann:
 "deprecated": true
 ```
 
-- `deprecated: true` an der Operation. Den Zusatz `(deprecated)` an summary und description empfiehlt Microsoft; der Generator setzt ihn, wenn er fehlt. Der Hinweis steht vorn in der description, weil Tooltips und Copilot Studio oft nur den Anfang zeigen.
-- `DeprecationMessage` allein genügt, `Deprecated = true` braucht es dann nicht. Der Hinweis am Attribut geht dem Text aus `[Obsolete]` vor.
+- `deprecated: true` an der Operation. Den Zusatz `(deprecated)` an summary und description empfiehlt Microsoft; der Generator setzt ihn, wenn er fehlt. Würde die summary damit länger als 80 Zeichen, steht er nur in der description. Der Hinweis steht vorn in der description, weil Tooltips und Copilot Studio oft nur den Anfang zeigen.
+- `DeprecationMessage` allein genügt, `Deprecated = true` braucht es dann nicht. Der Hinweis am Attribut geht dem Text aus `[Obsolete]` vor. `Deprecated = false` gilt ausdrücklich, auch gegen `DeprecationMessage` und `[Obsolete]`.
 - `[Obsolete]` nur an der Methode. An der Klasse wertet der Generator es nicht aus: Der Code, den das Functions-SDK für den Aufruf erzeugt, bekäme dafür CS0618, und der Build bräche mit `TreatWarningsAsErrors` ab. An der Methode unterdrückt das SDK die Warnung. Tests, die die Methode direkt aufrufen, warnen dagegen (CS0618); dann lieber `Deprecated` am Attribut. Nicht mit `[Obsolete(…, error: true)]`, diesen Fehler unterdrückt auch das SDK nicht.
 - In der [Endpunkt-Tabelle](#endpunkt-tabelle-in-der-readme) steht `ja` oder `ja: <Hinweis>` in der Spalte Deprecated.
 
@@ -150,15 +150,16 @@ Im Dokument steht dann:
 
 ## Enums
 
-Damit Power Automate und Copilot Studio eine Auswahl zeigen statt eines freien Felds, steht zu jedem Enum die Liste der Werte im Dokument:
+Damit Power Automate und Copilot Studio eine Auswahl zeigen statt eines freien Felds, steht zu einem Enum die Liste der Werte im Dokument:
 
 | Wo | Ergebnis |
 | --- | --- |
-| Pfad und Query | `type: string`, `enum` mit den Namen im Code; unabhängig vom Converter, auch für fremde Enums (etwa `DayOfWeek`), nullbare Enums und Listen |
+| Pfad und Query | `type: string`, `enum` mit den Namen im Code; unabhängig vom Converter, auch für fremde Enums (etwa `DayOfWeek`) und nullbare Enums |
 | JSON ohne Converter | `type: integer`, `enum` mit den Zahlen, `x-ms-enum-values` mit den Namen als Anzeigetext |
 | JSON mit `JsonStringEnumConverter` | `type: string`, `enum` mit den Namen wie im JSON, auch mit `[JsonStringEnumMemberName]` |
 
-- **Pfad und Query** sind Text, kein JSON. Die Function liest den Wert etwa mit `Enum.TryParse`, und das kennt nur die Namen im Code. `[JsonStringEnumMemberName]` gilt deshalb dort nicht: Aus `[JsonStringEnumMemberName("in-transit")] InTransit` wird in der Query `InTransit`. Wer dort andere Texte erwartet, liest sie selbst und deklariert den Parameter als string. Eine Liste (`Type = typeof(IReadOnlyList<State>)`) wird zu einem Wert aus der Auswahl.
+- **Pfad und Query** sind Text, kein JSON. Die Function liest den Wert etwa mit `Enum.TryParse`, und das kennt nur die Namen im Code. `[JsonStringEnumMemberName]` gilt deshalb dort nicht: Aus `[JsonStringEnumMemberName("in-transit")] InTransit` wird in der Query `InTransit`. Wer dort andere Texte erwartet, liest sie selbst und deklariert den Parameter als string.
+- **Listen in der Query** (`Type = typeof(IReadOnlyList<State>)`) bleiben wie bisher `type: string` ohne Auswahl, mit `SEEDOPENAPI008`. Flows setzen dort heute Text, etwa `Open,Shipped`; eine Auswahl mit einem Wert schlösse das aus. `type: array` mit `collectionFormat: csv` nimmt die Power Platform zwar an (zertifizierte Connectoren nutzen es), für bestehende Flows wäre es aber ein Typwechsel.
 - **JSON ohne Converter:** Die Function erwartet Zahlen. Die Auswahl zeigt die Namen und sendet die Zahl:
 
   ```json
@@ -174,8 +175,8 @@ Damit Power Automate und Copilot Studio eine Auswahl zeigen statt eines freien F
   ```
 
   Das Format folgt Microsoft: je Wert ein Objekt mit `value` aus `enum` und `displayName`, jede Zahl nur einmal (Schema `x-ms-enum-values` in [microsoft/PowerPlatformConnectors](https://github.com/microsoft/PowerPlatformConnectors/blob/dev/schemas/apiDefinition.swagger.schema.json), Regeln MissingEnumValuesDisplayName, InvalidEnumValuesExtensionValue und DuplicateEnumValuesInExtension im [Swagger Validator](https://learn.microsoft.com/en-us/connectors/custom-connectors/certification-swagger-validator-rules)). Haben mehrere Namen dieselbe Zahl, gilt der erste. Wie Power Automate die Anzeigetexte in einem echten Connector darstellt, ist nicht geprüft.
-- **`[Flags]`:** Die Liste nennt die einzelnen Werte. Mit `JsonStringEnumConverter` nennt System.Text.Json im JSON keine Werte, weil Kombinationen erlaubt sind; dann warnt der Build.
-- **Ohne Werteliste** warnt der Build mit `SEEDOPENAPI014`: leeres Enum, eigener `JsonConverter` am Enum, `[Flags]` mit `JsonStringEnumConverter`.
+- **`[Flags]`:** keine Werteliste und keine Warnung, in Pfad, Query und JSON. Kombinationen wie `Read | Write` (3) sind gültig; eine Liste der Einzelwerte schlösse sie aus. Der Typ bleibt wie bei System.Text.Json (`integer`, mit `JsonStringEnumConverter` `string`). Die Werte gehören dann in die `Description`.
+- **Ohne Werteliste** warnt der Build mit `SEEDOPENAPI014`: leeres Enum oder eigener `JsonConverter` am Enum. Nur für Parameter und den Anfrage-Body, auch in verschachtelten Typen; Enums nur in Antworten warnen nicht, ihre Werte sendet der Connector nie.
 
 ## Endpunkt-Tabelle in der README
 
@@ -204,14 +205,15 @@ Nach dem Build steht dazwischen etwa:
 | GET | `/api/invoices/{number}` | `GetInvoice` | Rechnung abrufen | `invoices.read` | ja: Stattdessen GetInvoiceV2 verwenden. |
 
 - **Lokal** schreibt der Build die Tabelle zwischen die Marker, nur wenn sie sich ändert, und meldet `… (Endpunkt-Tabelle aktualisiert)`. Die Datei gehört in denselben Commit wie der Code.
-- **In der CI** prüft er nur und ändert nichts: wenn `TF_BUILD` gesetzt ist (Azure DevOps) oder `ContinuousIntegrationBuild=true`. Weicht die Tabelle ab, warnt er mit `SEEDOPENAPI015`; dann lokal bauen und die Datei committen. Unterschiede nur im Zeilenende zählen nicht.
+- **Nur ohne Warnung:** Warnt der Export, bleibt die Datei, und der Build meldet `… nicht geschrieben, solange der Export warnt`. So landet keine halb fertige Function in der README. Codes, die `MSBuildWarningsAsMessages` oder `NoWarn` abschalten, zählen nicht.
+- **In der CI** prüft er nur und ändert nichts: wenn `TF_BUILD` gesetzt ist (Azure DevOps) oder `ContinuousIntegrationBuild=true`. Weicht die Tabelle ab, warnt er mit `SEEDOPENAPI015`; dann lokal bauen und die Datei committen. Unterschiede nur im Zeilenende zählen nicht. Die Warnung kommt bei jedem Build wieder, auch beim zweiten Lauf ohne clean.
 - Fehlt die Datei oder ein Marker, warnt der Build mit `SEEDOPENAPI016` und schreibt nichts. Marker in Codeblöcken zählen nicht; so darf die README sie auch als Beispiel zeigen. Ohne `SeedOpenApiReadme` passiert nichts.
-- **Spalten:** Pfad mit `basePath`, Zusammenfassung ohne den Zusatz `(deprecated)`. Capability: was `[RequireCapability]` an Methode und Klasse verlangt (alle nötig), `jede Rolle` bei `[RequireAnyRole]`, `ohne Rolle` bei `[AllowWithoutRole]` (angemeldet, auch ohne App-Rolle), `anonym` bei `[AllowAnonymous]`, sonst `–`. Das strengere Attribut gilt. Die Attribute aus Bfs.Seed.Auth erkennt der Generator am Namen; eine Abhängigkeit auf das Paket gibt es nicht.
+- **Spalten:** Pfad mit `basePath`, Zusammenfassung ohne den Zusatz `(deprecated)`. In summary und Hinweis sind `|`, `` ` `` und `<` maskiert, damit sie Tabelle und Marker nicht stören. Capability: was `[RequireCapability]` an Methode und Klasse verlangt (alle nötig), `jede Rolle` bei `[RequireAnyRole]`, `ohne Rolle` bei `[AllowWithoutRole]` (angemeldet, auch ohne App-Rolle), `anonym` bei `[AllowAnonymous]`, sonst `–`. Das strengere Attribut gilt. Die Attribute aus Bfs.Seed.Auth erkennt der Generator am Namen; eine Abhängigkeit auf das Paket gibt es nicht.
 - In Tests liefert `SeedOpenApiResult.EndpointTable()` dieselbe Tabelle.
 
 ## Wo die Datei landet
 
-- Nach jedem Build unter `bin/<Konfiguration>/net10.0/openapi/openapi.json`. Ohne Änderung an App, Projektdatei, host.json, XML-Doku, Abhängigkeiten oder der Datei aus `SeedOpenApiReadme` überspringt der Build den Export.
+- Nach jedem Build unter `bin/<Konfiguration>/net10.0/openapi/openapi.json`. Ohne Änderung an App, Projektdatei, host.json, XML-Doku, Abhängigkeiten oder der Datei aus `SeedOpenApiReadme` überspringt der Build den Export, aber nur, wenn der letzte Export ohne Warnung lief.
 - `basePath` kommt aus `extensions.http.routePrefix` in host.json (Standard `/api`), `info.version` aus der InformationalVersion ohne Anhang `+<commit>`. `host` fehlt; den setzt die Pipeline je Umgebung.
 - `dotnet publish -p:SeedOpenApiPublishDir=<Ordner>` kopiert die Datei zusätzlich dorthin, etwa als Pipeline-Artefakt. Ins Deploy-Paket der Function kommt sie nicht.
 
@@ -233,7 +235,7 @@ Das Target liegt unter `build/`, nicht `buildTransitive/`: Es wirkt nur im Proje
 
 ## Warnungen und Fehler
 
-Hinweise zeigt der Build als Warnung mit Code; openapi.json entsteht trotzdem. Wie Compiler-Warnungen erscheinen sie nur, wenn der Export läuft, also nicht bei einem Build ohne Änderung. Einzelne Codes abschalten: `<MSBuildWarningsAsMessages>$(MSBuildWarningsAsMessages);SEEDOPENAPI001</MSBuildWarningsAsMessages>`.
+Hinweise zeigt der Build als Warnung mit Code; openapi.json entsteht trotzdem. Solange der Export warnt, läuft er bei jedem Build wieder und meldet die Warnungen erneut; ein Build ohne Änderung verliert sie also nicht. Einzelne Codes abschalten: `<MSBuildWarningsAsMessages>$(MSBuildWarningsAsMessages);SEEDOPENAPI001</MSBuildWarningsAsMessages>` oder `<NoWarn>$(NoWarn);SEEDOPENAPI001</NoWarn>`; abgeschaltete Codes zählen für den Export nicht als Warnung.
 
 Es sind Warnungen von MSBuild, nicht vom Compiler: `TreatWarningsAsErrors` macht sie nicht zu Fehlern. Das tun `dotnet build -warnaserror` (auch einzeln: `-warnaserror:SEEDOPENAPI015`) oder die Eigenschaft `MSBuildTreatWarningsAsErrors=true`.
 
@@ -252,7 +254,7 @@ Es sind Warnungen von MSBuild, nicht vom Compiler: `TreatWarningsAsErrors` macht
 | `SEEDOPENAPI011` | openapi.json größer als 1 MB, der Custom Connector lehnt das ab |
 | `SEEDOPENAPI012` | `AuthorizationLevel` ist nicht `Anonymous`; den Function-Key sendet der Connector nicht |
 | `SEEDOPENAPI013` | Auswahlliste passt nicht zur Quelle: unbekannter oder fehlender Pflichtparameter, Verweis ins Leere, Pfad nicht im Antwortschema |
-| `SEEDOPENAPI014` | Enum ohne Werteliste: leeres Enum, eigener `JsonConverter`, `[Flags]` mit `JsonStringEnumConverter`; der Connector zeigt keine Auswahl |
+| `SEEDOPENAPI014` | Enum ohne Werteliste in einem Parameter oder im Anfrage-Body: leeres Enum, eigener `JsonConverter`; der Connector zeigt keine Auswahl. Nicht für `[Flags]` |
 | `SEEDOPENAPI015` | Endpunkt-Tabelle in der Datei aus `SeedOpenApiReadme` veraltet (nur in der CI); lokal bauen und die Datei committen |
 | `SEEDOPENAPI016` | Datei aus `SeedOpenApiReadme` fehlt oder hat die Marker nicht; keine Endpunkt-Tabelle |
 
@@ -269,7 +271,7 @@ Fehler brechen den Build ab:
 ## Grenzen
 
 - **Swagger 2.0**, weil der Custom Connector nur das annimmt. Kein `anyOf`/`oneOf`, keine Typ-Listen, keine optionalen Pfadparameter. Ein nullbares Objekt bleibt ein `$ref` ohne `x-nullable`, ist aber keine Pflicht.
-- **Nur JSON** (`application/json`) für Body und Antworten. Formulare, Dateien, Header-Parameter und andere Content-Types kennt der Generator nicht. Query-Parameter gibt es nur per `[OpenApiParameter]` und nur mit einfachen Typen: string, Zahlen, bool, Guid, Datum, Enum (als Liste ein Wert aus der Auswahl).
+- **Nur JSON** (`application/json`) für Body und Antworten. Formulare, Dateien, Header-Parameter und andere Content-Types kennt der Generator nicht. Query-Parameter gibt es nur per `[OpenApiParameter]` und nur mit einfachen Typen: string, Zahlen, bool, Guid, Datum, Enum. Listen dokumentiert er als string (`SEEDOPENAPI008`).
 - **Typen:** alles, was System.Text.Json serialisiert, also Records, Klassen, Listen, Dictionaries, Enums, Guid, `DateTime`, `DateTimeOffset`, Zahlen. Enums stehen im JSON als Zahlen mit Anzeigetexten, mit `[JsonConverter(typeof(JsonStringEnumConverter<T>))]` am Typ als Namen ([Enums](#enums)). Eigene JSON-Einstellungen in Program.cs, etwa ein globaler `JsonStringEnumConverter`, sieht der Generator nicht.
 - **Antworttypen** schreibt man selbst dazu, was ein `IActionResult` liefert, sieht der Generator nicht. Anonyme Objekte haben kein Schema, dafür Records verwenden.
 

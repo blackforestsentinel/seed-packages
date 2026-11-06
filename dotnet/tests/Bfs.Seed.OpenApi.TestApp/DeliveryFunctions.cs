@@ -17,7 +17,7 @@ public sealed class DeliveryFunctions
     [OpenApiOperation("ListDeliveries", "Lieferungen auflisten")]
     [OpenApiParameter("day", Type = typeof(DayOfWeek))]
     [OpenApiParameter("priority", Type = typeof(Priority?))]
-    [OpenApiParameter("states", Type = typeof(IReadOnlyList<DeliveryState>))]
+    [OpenApiParameter("state", Type = typeof(DeliveryState))]
     [OpenApiResponse(200, typeof(IReadOnlyList<Delivery>))]
     public static IActionResult List(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "deliveries")] HttpRequest request) => new OkResult();

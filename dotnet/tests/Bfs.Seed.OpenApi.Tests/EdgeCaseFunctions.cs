@@ -249,6 +249,14 @@ public sealed class DeprecationFunctions
     public static IActionResult AlreadyMarked(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "already-marked")] HttpRequest request) => new OkResult();
 
+    // Ausdrücklich nicht veraltet: gilt gegen DeprecationMessage und [Obsolete].
+    [Obsolete("Nur für C#-Aufrufer veraltet")]
+    [Function("NotDeprecated")]
+    [OpenApiOperation("NotDeprecated", "Nicht veraltet", Deprecated = false, DeprecationMessage = "Ohne Wirkung")]
+    [OpenApiResponse(204)]
+    public static IActionResult NotDeprecated(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "not-deprecated")] HttpRequest request) => new OkResult();
+
     // 70 Zeichen; mit dem Zusatz über 80.
     [Function("LongSummary")]
     [OpenApiOperation("LongSummary", "Eine recht lange Zusammenfassung, die fast an die Grenze heranreicht", Deprecated = true)]
@@ -272,15 +280,44 @@ public sealed class ObsoleteClassFunctions
 
 public sealed class EnumEdgeCaseFunctions
 {
+    // Läuft vor Run (Methoden nach Namen): EnumHolder entsteht zuerst als Antwort; Run nutzt ihn im Body.
+    [Function("EnumAnswer")]
+    [OpenApiOperation("EnumAnswer", "Enums nur in Antworten")]
+    [OpenApiResponse(200, typeof(EnumHolder))]
+    [OpenApiResponse(201, typeof(EnumResponse))]
+    [OpenApiResponse(202, typeof(IReadOnlyList<Code>))]
+    public static IActionResult Answer(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "enum-answer")] HttpRequest request) => new OkResult();
+
+    [Function("EnumInline")]
+    [OpenApiOperation("EnumInline", "Liste von Enums als Body")]
+    [OpenApiRequestBody(typeof(IReadOnlyList<Code>))]
+    [OpenApiResponse(204)]
+    public static IActionResult Inline(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "enum-inline")] HttpRequest request) => new OkResult();
+
     [Function("EnumEdgeCases")]
     [OpenApiOperation("EnumEdgeCases", "Enums mit Sonderfällen")]
     [OpenApiParameter("nothing", Type = typeof(EmptyEnum))]
     [OpenApiParameter("rights", Type = typeof(StringRights))]
+    [OpenApiParameter("plainRights", Type = typeof(Rights?))]
     [OpenApiParameter("codes", Type = typeof(Code?[]))]
+    [OpenApiParameter("aliases", Type = typeof(IReadOnlyList<Alias>))]
     [OpenApiRequestBody(typeof(EnumEdgeCaseRequest))]
     [OpenApiResponse(200, typeof(Alias))]
     public static IActionResult Run(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "enum-edge-cases")] HttpRequest request) => new OkResult();
+}
+
+// Ohne Body: Enums ohne Werteliste in Antworten warnen nicht.
+public sealed class EnumAnswerOnlyFunctions
+{
+    [Function("EnumAnswerOnly")]
+    [OpenApiOperation("EnumAnswerOnly", "Enums nur in Antworten")]
+    [OpenApiResponse(200, typeof(EnumHolder))]
+    [OpenApiResponse(201, typeof(IReadOnlyList<Code>))]
+    public static IActionResult Run(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "enum-answer-only")] HttpRequest request) => new OkResult();
 }
 
 public enum EmptyEnum
@@ -323,7 +360,13 @@ public enum Huge : ulong
     Max = ulong.MaxValue,
 }
 
-public sealed record EnumEdgeCaseRequest(EmptyEnum Nothing, Rights Rights, StringRights StringRights, Code Code, Alias Alias, Huge Huge);
+public sealed record EnumEdgeCaseRequest(EmptyEnum Nothing, Rights Rights, StringRights StringRights, Code Code, Alias Alias, Huge Huge, EnumHolder Holder);
+
+/// <summary>Erst Antwort, dann über EnumEdgeCaseRequest im Body: warnt.</summary>
+public sealed record EnumHolder(Code Held);
+
+/// <summary>Nur Antwort: warnt nicht, der Connector sendet diese Werte nie.</summary>
+public sealed record EnumResponse(Code Code, EmptyEnum Nothing);
 
 public sealed class CodeConverter : JsonConverter<Code>
 {
@@ -339,7 +382,7 @@ public sealed class CodeConverter : JsonConverter<Code>
 public sealed class TableEdgeCaseFunctions
 {
     [Function("Piped")]
-    [OpenApiOperation("Piped", "Ein | im Titel", DeprecationMessage = "Zeile eins\nZeile | zwei")]
+    [OpenApiOperation("Piped", "Ein | im `Titel` <b>", DeprecationMessage = "Zeile eins\nZeile | zwei <!-- seed:endpoints:end -->")]
     [OpenApiResponse(204)]
     public static IActionResult Run(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "piped")] HttpRequest request) => new OkResult();

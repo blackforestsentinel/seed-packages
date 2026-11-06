@@ -44,8 +44,11 @@ internal static class ReadmeTable
         };
         foreach (var e in endpoints)
         {
-            var deprecated = !e.Deprecated ? "" : e.DeprecationMessage is null ? "ja" : $"ja: {e.DeprecationMessage}";
-            lines.Add(Row(e.Method.ToUpperInvariant(), Code(e.Path), Code(e.OperationId), e.Summary, e.Access, deprecated));
+            var deprecated = !e.Deprecated ? "" : e.DeprecationMessage is null ? "ja" : $"ja: {Text(e.DeprecationMessage)}";
+
+            // Access baut der Generator selbst, Capabilities schon als Code.
+            var access = e.Access.ReplaceLineEndings(" ").Replace("|", "\\|", StringComparison.Ordinal);
+            lines.Add(Row(e.Method.ToUpperInvariant(), Code(e.Path), Code(e.OperationId), Text(e.Summary), access, deprecated));
         }
 
         return string.Join("\n", lines);
@@ -129,10 +132,20 @@ internal static class ReadmeTable
 
     private static string Normalize(string text) => text.ReplaceLineEndings("\n").Trim();
 
-    private static string Row(params string[] cells) => $"| {string.Join(" | ", cells.Select(Cell))} |";
+    private static string Row(params string[] cells) => $"| {string.Join(" | ", cells)} |";
 
-    /// <summary>Senkrechte Striche trennen Zellen, Zeilenumbrüche beenden die Zeile; beides darf im Text nicht wirken.</summary>
-    private static string Cell(string text) => text.ReplaceLineEndings(" ").Replace("|", "\\|", StringComparison.Ordinal).Trim();
+    /// <summary>
+    /// Text aus summary oder Hinweis darf die Tabelle nicht verändern: Senkrechte Striche trennen Zellen,
+    /// Zeilenumbrüche beenden die Zeile, &lt; beginnt HTML wie einen Kommentar oder Marker, ein Backtick
+    /// einen Code-Abschnitt bis in die nächste Zelle.
+    /// </summary>
+    private static string Text(string text) => text.ReplaceLineEndings(" ")
+        .Replace("\\", "\\\\", StringComparison.Ordinal)
+        .Replace("|", "\\|", StringComparison.Ordinal)
+        .Replace("`", "\\`", StringComparison.Ordinal)
+        .Replace("<", "&lt;", StringComparison.Ordinal)
+        .Trim();
 
-    private static string Code(string text) => $"`{text}`";
+    /// <summary>Pfad und operationId als Code; einen Backtick darin gibt es dort nicht.</summary>
+    private static string Code(string text) => $"`{text.Replace("|", "\\|", StringComparison.Ordinal)}`";
 }

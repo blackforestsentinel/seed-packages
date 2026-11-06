@@ -33,11 +33,24 @@ public partial class ExportTests
         var path = OutputPath();
         var (exitCode, output, _) = Run(AppPath, path);
 
-        Assert.Equal(0, exitCode);
+        // 3: geschrieben, aber mit Warnung.
+        Assert.Equal(ExportCommand.Warned, exitCode);
         var warning = Assert.Single(output, l => l.Contains(": warning ", StringComparison.Ordinal));
         Assert.Matches(CanonicalMessage(), warning);
         Assert.StartsWith("Bfs.Seed.OpenApi : warning SEEDOPENAPI006: ListArchive:", warning, StringComparison.Ordinal);
         Assert.Equal(TestDocuments.App.Operations().Count(), JsonNode.Parse(File.ReadAllText(path))!["paths"]!.AsObject().Sum(p => p.Value!.AsObject().Count));
+    }
+
+    [Fact]
+    public void Tool_ExitsWithZeroWhenAllWarningsAreQuiet()
+    {
+        // Codes aus MSBuildWarningsAsMessages und NoWarn: MSBuild zeigt sie als Meldung, das Ergebnis gilt als aktuell.
+        var output = new StringWriter();
+
+        var exitCode = ExportCommand.Run([AppPath, OutputPath(), "--quiet", "seedopenapi006"], output, new StringWriter());
+
+        Assert.Equal(0, exitCode);
+        Assert.Contains("warning SEEDOPENAPI006", output.ToString(), StringComparison.Ordinal);
     }
 
     [Fact]

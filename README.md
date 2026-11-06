@@ -4,17 +4,19 @@ Code-Bausteine für Projekte aus dem [Sentinel-Seed-Template](https://github.com
 
 | Paket | Registry | Inhalt |
 | --- | --- | --- |
-| [`Bfs.Seed.Functions.Core`](dotnet/src/Bfs.Seed.Functions.Core) | nuget.org | `AddSeedCore()`: Application Insights, `SeedOptions`, `SeedHealthReport`, `SeedSecrets` mit Prüfung beim Start |
+| [`Bfs.Seed.Functions.Core`](dotnet/src/Bfs.Seed.Functions.Core) | nuget.org | `AddSeedCore()`: Application Insights, `SeedOptions`, `SeedHealthReport` mit bald ablaufenden Secrets, `SeedSecrets` mit Prüfung beim Start |
 | [`@blackforestsentinel/seed-web-core`](web/packages/seed-web-core) | npm | `loadRuntimeConfig()`, `createHttpClient()` |
-| [`Bfs.Seed.Auth`](dotnet/src/Bfs.Seed.Auth) | nuget.org | `UseSeedAuth()`: Token-Prüfung gegen Entra ID, `[AllowAnonymous]` für Ausnahmen |
+| [`Bfs.Seed.Auth`](dotnet/src/Bfs.Seed.Auth) | nuget.org | `UseSeedAuth()`: Token-Prüfung gegen Entra ID, `[RequireCapability]`, `[RequireAnyRole]`, `[AllowWithoutRole]`, `[AllowAnonymous]`; Analyzer im Build: Functions ohne Berechtigungsangabe, `[AllowAnonymous]` neben anderen Angaben, Unterdrückungen ohne Begründung |
 | [`@blackforestsentinel/seed-web-auth`](web/packages/seed-web-auth) | npm | `createSeedAuth()`: Login per MSAL, Access-Tokens für die API und für Microsoft Graph |
 | [`@blackforestsentinel/seed-web-people`](web/packages/seed-web-people) | npm | React-Komponenten für Personen: `Avatar`, `CurrentUserMenu`, `PeoplePicker`, `PersonCard`, `SignInPage`, `AccessDenied`, Daten aus Microsoft Graph im Browser |
 | [`Bfs.Seed.Mcp`](dotnet/src/Bfs.Seed.Mcp) | nuget.org | `AddSeedMcp()`: MCP-Server unter `/api/mcp` mit Metadaten nach RFC 9728, Werkzeuge per Attribut, Capabilities je Werkzeug |
 | [`Bfs.Seed.Storage`](dotnet/src/Bfs.Seed.Storage) | nuget.org | `AddSeedStorage()`: Clients für Table, Blob und Queue (Managed Identity, lokal Azurite), Table-Repository mit ETag, Partition je `oid`/`tid`, Queue-Nachrichten passend zum Trigger |
-| [`Bfs.Seed.OpenApi`](dotnet/src/Bfs.Seed.OpenApi) | nuget.org | openapi.json (Swagger 2.0) beim Build aus Attributen an den HTTP-Functions, ohne Functions-Host; Grundlage für den Custom Connector der Power Platform |
+| [`Bfs.Seed.OpenApi`](dotnet/src/Bfs.Seed.OpenApi) | nuget.org | openapi.json (Swagger 2.0) beim Build aus Attributen an den HTTP-Functions, ohne Functions-Host; Grundlage für den Custom Connector der Power Platform, mit veralteten Operationen, Auswahllisten für Enums und einer Endpunkt-Tabelle für die README |
 | [`Bfs.Seed.Extension`](dotnet/src/Bfs.Seed.Extension) | nuget.org | `AddSeedExtensionUpdates()`: Update-Endpunkt einer selbst gehosteten Browser-Erweiterung (`/api/extension/updates.xml`, signierte CRX aus dem Container `extension`), für die Verteilung per Intune |
 
 `Bfs.Seed.OpenApi` wirkt beim Build: Das Paket bringt neben der Bibliothek ein Export-Werkzeug (`tools/`) und ein MSBuild-Target (`build/`) mit. Das Werkzeug ist kein eigenes Paket; sein Projekt `Bfs.Seed.OpenApi.Export` ist nicht packbar.
+
+`Bfs.Seed.Auth` wirkt ebenfalls beim Build: Es bringt einen Roslyn-Analyzer mit (`analyzers/dotnet/cs/`), der in jedem Projekt mit `Bfs.Seed.Auth` oder `Bfs.Seed.Mcp` läuft. Die Regeln sind Fehler; abschalten lassen sie sich nur per `[SuppressMessage]` mit einer Begründung von mindestens 10 Zeichen, nicht per Pragma, `NoWarn` oder `.editorconfig`. Sein Projekt `Bfs.Seed.Analyzers` (netstandard2.0) ist nicht packbar; Regeln und Diagnose-IDs stehen in der [README von Bfs.Seed.Auth](dotnet/src/Bfs.Seed.Auth/README.md#regeln-im-build-analyzer). Neue Regeln kommen in `AnalyzerReleases.Unshipped.md`, beim Release nach `AnalyzerReleases.Shipped.md`.
 
 ## Entwickeln
 

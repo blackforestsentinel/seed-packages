@@ -18,8 +18,8 @@ public static class SeedCoreExtensions
     /// <summary>
     /// Registriert Application Insights für den Worker, bindet <see cref="SeedOptions"/>
     /// an den Abschnitt <c>Seed</c> und registriert <see cref="SeedSecrets"/>. Die App startet
-    /// nicht, wenn eine Function <c>[RequireCapability]</c> oder <c>[RequireScope]</c> trägt und
-    /// <c>UseSeedAuth()</c> fehlt.
+    /// nicht, wenn eine Function <c>[RequireCapability]</c>, <c>[RequireScope]</c>, <c>[RequireAnyRole]</c>
+    /// oder <c>[AllowWithoutRole]</c> trägt und <c>UseSeedAuth()</c> fehlt.
     /// </summary>
     public static FunctionsApplicationBuilder AddSeedCore(this FunctionsApplicationBuilder builder)
     {
@@ -36,7 +36,7 @@ public static class SeedCoreExtensions
             .Bind(builder.Configuration.GetSection(SeedOptions.SectionName))
             .ValidateOnStart();
 
-        // Functions mit [RequireCapability] oder [RequireScope] nur mit Token-Prüfung. Geprüft wird
+        // Functions mit Attributen, die eine Anmeldung voraussetzen, nur mit Token-Prüfung. Geprüft wird
         // beim Start, wenn Program.cs UseSeedAuth() schon aufgerufen hat oder eben nicht.
         var services = builder.Services;
         builder.Services.TryAddSingleton(new SeedFunctionAssemblies([.. new[] { Assembly.GetEntryAssembly() }.OfType<Assembly>()]));

@@ -19,7 +19,16 @@ public static partial class SeedOpenApiDocument
     private const string FunctionAttribute = "Microsoft.Azure.Functions.Worker.FunctionAttribute";
     private const string HttpTriggerAttribute = "Microsoft.Azure.Functions.Worker.HttpTriggerAttribute";
     private const string AllowAnonymousAttribute = "Microsoft.AspNetCore.Authorization.AllowAnonymousAttribute";
+
+    // Bfs.Seed.Auth nur über den Namen: Das Paket hängt nicht davon ab.
+    private const string RequireCapabilityAttribute = "Bfs.Seed.Auth.RequireCapabilityAttribute";
+    private const string RequireAnyRoleAttribute = "Bfs.Seed.Auth.RequireAnyRoleAttribute";
+    private const string AllowWithoutRoleAttribute = "Bfs.Seed.Auth.AllowWithoutRoleAttribute";
+
     private const string SecurityName = "oauth2";
+
+    /// <summary>Zusatz an summary und description, wie Microsoft ihn für veraltete Operationen empfiehlt.</summary>
+    private const string DeprecatedMarker = "(deprecated)";
 
     /// <summary>Power Platform lehnt größere Definitionen ab.</summary>
     private const int MaxBytes = 1024 * 1024;
@@ -47,7 +56,20 @@ public static partial class SeedOpenApiDocument
     /// <exception cref="SeedOpenApiException">
     /// Eine operationId oder Methode und Pfad gibt es mehrfach, oder <see cref="OpenApiDynamicValuesAttribute"/> passt nicht.
     /// </exception>
-    public static string[] Export(Assembly assembly, string outputPath)
+    public static string[] Export(Assembly assembly, string outputPath) => Export(assembly, outputPath, null, false, []);
+
+    /// <summary>
+    /// Wie <see cref="Export(Assembly, string)"/>, dazu die Endpunkt-Tabelle in <paramref name="readmePath"/>
+    /// zwischen den Markern <c>&lt;!-- seed:endpoints:start --&gt;</c> und <c>&lt;!-- seed:endpoints:end --&gt;</c>.
+    /// Mit <paramref name="checkReadme"/> nur prüfen (CI). Sonst schreiben, aber nur, wenn das Dokument
+    /// ohne Warnung entsteht; Codes aus <paramref name="quietCodes"/> (im Build als Meldung abgeschaltet)
+    /// zählen dabei nicht. Aufruf durch das Werkzeug Bfs.Seed.OpenApi.Export beim Build; Signatur
+    /// deshalb nicht ändern.
+    /// </summary>
+    /// <exception cref="SeedOpenApiException">
+    /// Eine operationId oder Methode und Pfad gibt es mehrfach, oder <see cref="OpenApiDynamicValuesAttribute"/> passt nicht.
+    /// </exception>
+    public static string[] Export(Assembly assembly, string outputPath, string? readmePath, bool checkReadme, string[] quietCodes)
     {
         ArgumentNullException.ThrowIfNull(assembly);
         ArgumentException.ThrowIfNullOrEmpty(outputPath);
@@ -66,6 +88,15 @@ public static partial class SeedOpenApiDocument
             warnings.Add(new(SeedOpenApiCodes.TooLarge, "openapi.json ist größer als 1 MB; der Custom Connector lehnt das ab"));
         }
 
+        // Lokal nur aus einem Dokument ohne Warnung: Was der Build bemängelt, etwa eine halb fertige
+        // Function, soll nicht in der README landen. Die CI prüft immer.
+        var quiet = new HashSet<string>(quietCodes ?? [], StringComparer.OrdinalIgnoreCase);
+        var clean = warnings.All(w => quiet.Contains(w.Code));
+        if (!string.IsNullOrEmpty(readmePath) && (checkReadme || clean) && ReadmeTable.Update(readmePath, result.EndpointTable(), checkReadme) is { } readmeWarning)
+        {
+            warnings.Add(readmeWarning);
+        }
+
         var fullPath = Path.GetFullPath(outputPath);
         Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
         File.WriteAllText(fullPath, json, new UTF8Encoding(false));
@@ -81,6 +112,8 @@ public static partial class SeedOpenApiDocument
         var schemas = new SwaggerSchemas(options.SerializerOptions, warnings);
         var paths = new SortedDictionary<string, JsonObject>(StringComparer.Ordinal);
         var operationIds = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var endpoints = new List<SeedOpenApiEndpoint>();
+        var basePath = "/" + options.RoutePrefix.Trim('/');
 
         foreach (var function in FindHttpFunctions(types, warnings))
         {
@@ -105,6 +138,7 @@ public static partial class SeedOpenApiDocument
                 }
 
                 item[method] = operation;
+                endpoints.Add(Endpoint(function, method, basePath, path, operation));
             }
         }
 
@@ -127,7 +161,7 @@ public static partial class SeedOpenApiDocument
         {
             ["swagger"] = "2.0",
             ["info"] = infoNode,
-            ["basePath"] = "/" + options.RoutePrefix.Trim('/'),
+            ["basePath"] = basePath,
             ["schemes"] = new JsonArray("https"),
             ["consumes"] = new JsonArray("application/json"),
             ["produces"] = new JsonArray("application/json"),
@@ -150,8 +184,13 @@ public static partial class SeedOpenApiDocument
             };
         }
 
+        schemas.AddRequestEnumWarnings();
         DynamicValues.Check(document, warnings);
-        return new SeedOpenApiResult(document, [.. warnings.Distinct()]);
+        return new SeedOpenApiResult(document, [.. warnings.Distinct()])
+        {
+            // Reihenfolge wie im Dokument: Pfade sortiert, Methoden in fester Folge.
+            Endpoints = [.. endpoints.OrderBy(e => e.DocumentPath, StringComparer.Ordinal).ThenBy(e => Array.IndexOf(SwaggerMethods, e.Method))],
+        };
     }
 
     private static JsonObject Operation(HttpFunction function, string method, SwaggerSchemas schemas, List<SeedOpenApiWarning> warnings, SeedOpenApiOptions options)
@@ -174,19 +213,32 @@ public static partial class SeedOpenApiDocument
             warnings.Add(new(SeedOpenApiCodes.OperationIdFormat, $"{where}: operationId {id} sollte mit einem Buchstaben beginnen und nur Buchstaben, Ziffern und _ enthalten"));
         }
 
+        var deprecation = FindDeprecation(function.Method, annotation);
         var summary = annotation?.Summary ?? function.Name;
+
+        // Über 80 Zeichen lehnt der Connector die summary ab; dann steht der Zusatz nur in der description.
+        var marked = $"{summary} {DeprecatedMarker}";
+        if (deprecation is not null && !summary.Contains(DeprecatedMarker, StringComparison.OrdinalIgnoreCase) && marked.Length <= 80)
+        {
+            summary = marked;
+        }
+
         if (summary.Length > 80)
         {
             warnings.Add(new(SeedOpenApiCodes.TooLong, $"{where}: summary ist länger als 80 Zeichen"));
         }
 
         var operation = new JsonObject { ["summary"] = summary };
-        if (annotation?.Description is { } description)
+        if (Description(annotation?.Description, deprecation) is { } description)
         {
             operation["description"] = description;
         }
 
         operation["operationId"] = id;
+        if (deprecation is not null)
+        {
+            operation["deprecated"] = true;
+        }
 
         var parameters = new JsonArray();
         var declared = new Dictionary<string, OpenApiParameterAttribute>(StringComparer.OrdinalIgnoreCase);
@@ -259,7 +311,7 @@ public static partial class SeedOpenApiDocument
                 parameter["description"] = body.Description;
             }
 
-            parameter["schema"] = schemas.SchemaFor(body.Type);
+            parameter["schema"] = schemas.SchemaFor(body.Type, request: true);
             parameters.Add(parameter);
         }
 
@@ -333,7 +385,87 @@ public static partial class SeedOpenApiDocument
         return parameter;
     }
 
-    private sealed record HttpFunction(string Name, MethodInfo Method, string Route, IReadOnlyList<string> Methods, bool Anonymous);
+    /// <summary>
+    /// Veraltet über <see cref="OpenApiOperationAttribute.Deprecated"/>, <see cref="OpenApiOperationAttribute.DeprecationMessage"/>
+    /// oder <c>[Obsolete]</c> an der Methode, sonst null; <c>Deprecated = false</c> geht allem vor.
+    /// <c>[Obsolete]</c> an der Klasse zählt nicht: Der Code, den das Functions-SDK für den Aufruf
+    /// erzeugt, bekäme dafür CS0618 und bräche den Build.
+    /// </summary>
+    private static Deprecation? FindDeprecation(MethodInfo method, OpenApiOperationAttribute? annotation)
+    {
+        var obsolete = method.GetCustomAttribute<ObsoleteAttribute>();
+        if (annotation?.DeprecatedSetting is false || (annotation is not { Deprecated: true } && obsolete is null))
+        {
+            return null;
+        }
+
+        var message = new[] { annotation?.DeprecationMessage, obsolete?.Message }.FirstOrDefault(m => !string.IsNullOrWhiteSpace(m));
+        return new Deprecation(message?.Trim());
+    }
+
+    /// <summary>
+    /// Beschreibung, bei veralteten Operationen mit Zusatz und Hinweis vorn: Tooltips und
+    /// Copilot Studio zeigen oft nur den Anfang.
+    /// </summary>
+    private static string? Description(string? description, Deprecation? deprecation)
+    {
+        if (deprecation is null)
+        {
+            return description;
+        }
+
+        var marker = description?.Contains(DeprecatedMarker, StringComparison.OrdinalIgnoreCase) == true ? null : DeprecatedMarker;
+        return string.Join(" ", new[] { marker, deprecation.Message, description }.Where(p => !string.IsNullOrWhiteSpace(p)));
+    }
+
+    private static SeedOpenApiEndpoint Endpoint(HttpFunction function, string method, string basePath, string path, JsonObject operation)
+    {
+        var annotation = function.Method.GetCustomAttribute<OpenApiOperationAttribute>();
+        var deprecation = FindDeprecation(function.Method, annotation);
+        return new SeedOpenApiEndpoint(
+            Method: method,
+            DocumentPath: path,
+            Path: basePath == "/" ? path : basePath + path,
+            OperationId: operation["operationId"]!.GetValue<string>(),
+            Summary: annotation?.Summary ?? function.Name,
+            Deprecated: deprecation is not null,
+            DeprecationMessage: deprecation?.Message,
+            Access: function.Access);
+    }
+
+    /// <summary>
+    /// Wer die Function aufrufen darf, für die Endpunkt-Tabelle: <c>anonym</c>, die Capabilities aus
+    /// <c>[RequireCapability]</c> (alle nötig), <c>jede Rolle</c> bei <c>[RequireAnyRole]</c>, <c>ohne Rolle</c>
+    /// bei <c>[AllowWithoutRole]</c>, sonst <c>–</c>. Das strengere Attribut gilt, wie in Bfs.Seed.Auth.
+    /// </summary>
+    internal static string Access(IEnumerable<object> attributes, bool anonymous)
+    {
+        if (anonymous)
+        {
+            return "anonym";
+        }
+
+        var all = attributes.ToList();
+        var capabilities = all
+            .Where(a => a.GetType().FullName == RequireCapabilityAttribute)
+            .Select(a => Property(a, "Capability") as string)
+            .OfType<string>()
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .ToList();
+        if (capabilities.Count > 0)
+        {
+            return string.Join(", ", capabilities.Select(c => $"`{c}`"));
+        }
+
+        return all.Any(a => a.GetType().FullName == RequireAnyRoleAttribute) ? "jede Rolle"
+            : all.Any(a => a.GetType().FullName == AllowWithoutRoleAttribute) ? "ohne Rolle"
+            : "–";
+    }
+
+    private sealed record Deprecation(string? Message);
+
+    private sealed record HttpFunction(string Name, MethodInfo Method, string Route, IReadOnlyList<string> Methods, bool Anonymous, string Access);
 
     private static IEnumerable<HttpFunction> FindHttpFunctions(IEnumerable<Type> types, List<SeedOpenApiWarning> warnings)
     {
@@ -377,7 +509,8 @@ public static partial class SeedOpenApiDocument
                 }
 
                 var anonymous = FindAttribute(method, AllowAnonymousAttribute) is not null || FindAttribute(type, AllowAnonymousAttribute) is not null;
-                yield return new HttpFunction(name, method, route, verbs, anonymous);
+                var access = Access([.. method.GetCustomAttributes(true), .. type.GetCustomAttributes(true)], anonymous);
+                yield return new HttpFunction(name, method, route, verbs, anonymous, access);
             }
         }
     }

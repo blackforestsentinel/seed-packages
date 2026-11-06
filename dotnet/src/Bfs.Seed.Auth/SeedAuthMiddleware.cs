@@ -12,8 +12,9 @@ namespace Bfs.Seed.Auth;
 
 /// <summary>
 /// Lässt HTTP-Aufrufe nur mit gültigem Bearer-Token durch und setzt die Attribute an der Function
-/// durch: <see cref="RequireScopeAttribute"/> und <see cref="RequireCapabilityAttribute"/>.
-/// Functions mit <see cref="AllowAnonymousAttribute"/> an Methode oder Klasse sind ausgenommen.
+/// durch: <see cref="RequireScopeAttribute"/>, <see cref="RequireAnyRoleAttribute"/> und
+/// <see cref="RequireCapabilityAttribute"/>. Functions mit <see cref="AllowAnonymousAttribute"/> an
+/// Methode oder Klasse sind ausgenommen.
 /// </summary>
 internal sealed class SeedAuthMiddleware(
     SeedTokenValidator validator,
@@ -97,6 +98,15 @@ internal sealed class SeedAuthMiddleware(
             http.User = result.Principal!;
         }
 
+        // Jede Rolle im Token ist eine App-Rolle dieser API: Entra stellt nur deren Rollen aus.
+        if (requirements.RequireAnyRole && http.User.GetRoles().Count == 0)
+        {
+            logger.LogInformation("{Function} verlangt eine App-Rolle, {User} hat keine.",
+                context.FunctionDefinition.Name, http.User.FindFirst("oid")?.Value);
+            http.Response.StatusCode = StatusCodes.Status403Forbidden;
+            return;
+        }
+
         var missing = requirements.Capabilities.FirstOrDefault(c => !http.User.HasCapability(c));
         if (missing is not null)
         {
@@ -131,10 +141,12 @@ internal sealed class SeedAuthMiddleware(
             .Concat(type?.GetCustomAttributes(inherit: true) ?? [])
             .ToList();
 
+        // [AllowWithoutRole] ändert nichts: Ohne Rolle durchzulassen ist das Verhalten ohne Attribut.
         return new FunctionRequirements(
             AllowAnonymous: attributes.OfType<IAllowAnonymous>().Any(),
             Scopes: attributes.OfType<RequireScopeAttribute>().FirstOrDefault()?.Scopes,
-            Capabilities: attributes.OfType<RequireCapabilityAttribute>().Select(a => a.Capability).Distinct(StringComparer.Ordinal).ToList());
+            Capabilities: attributes.OfType<RequireCapabilityAttribute>().Select(a => a.Capability).Distinct(StringComparer.Ordinal).ToList(),
+            RequireAnyRole: attributes.OfType<RequireAnyRoleAttribute>().Any());
     }
 
     private void Reject(HttpContext http, int status, string? error, IReadOnlyList<string>? scopes = null)
@@ -166,5 +178,5 @@ internal sealed class SeedAuthMiddleware(
     }
 
     /// <summary>Was eine Function verlangt, einmal je Function per Reflection ermittelt.</summary>
-    internal sealed record FunctionRequirements(bool AllowAnonymous, IReadOnlyList<string>? Scopes, IReadOnlyList<string> Capabilities);
+    internal sealed record FunctionRequirements(bool AllowAnonymous, IReadOnlyList<string>? Scopes, IReadOnlyList<string> Capabilities, bool RequireAnyRole);
 }

@@ -23,4 +23,27 @@
     <InternalsVisibleTo Include="Bfs.Seed.Auth.Tests" />
   </ItemGroup>
 
+  <!--
+    Analyzer (SEEDAUTH*, SEEDSUPPRESS*): kein eigenes Paket, sondern unter analyzers/dotnet/cs in
+    diesem Paket. So wirkt er in jedem Projekt, das Bfs.Seed.Auth referenziert, auch über Bfs.Seed.Mcp.
+    Die Referenz baut ihn vorher und lässt ihn auch über den Code dieses Pakets laufen; sie ist keine
+    Abhängigkeit des Pakets.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\Bfs.Seed.Analyzers\Bfs.Seed.Analyzers.csproj" ReferenceOutputAssembly="false" OutputItemType="Analyzer" PrivateAssets="all" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetsForTfmSpecificContentInPackage>$(TargetsForTfmSpecificContentInPackage);_SeedPackAnalyzer</TargetsForTfmSpecificContentInPackage>
+  </PropertyGroup>
+
+  <Target Name="_SeedPackAnalyzer">
+    <MSBuild Projects="..\Bfs.Seed.Analyzers\Bfs.Seed.Analyzers.csproj" Targets="GetTargetPath" RemoveProperties="TargetFramework">
+      <Output TaskParameter="TargetOutputs" PropertyName="_SeedAnalyzerPath" />
+    </MSBuild>
+    <ItemGroup>
+      <TfmSpecificPackageFile Include="$(_SeedAnalyzerPath)" PackagePath="analyzers/dotnet/cs/" />
+    </ItemGroup>
+  </Target>
+
 </Project>

@@ -12,7 +12,7 @@ namespace Bfs.Seed.Functions.Core;
 /// <remarks>
 /// Meldungen und <see cref="Problems"/> nennen nur Setting- und Secret-Namen, nie Werte.
 /// </remarks>
-public sealed partial class SeedSecrets(IConfiguration configuration)
+public sealed partial class SeedSecrets
 {
     /// <summary>Konfigurationsabschnitt der Secrets.</summary>
     public const string SectionName = "Secrets";
@@ -20,10 +20,49 @@ public sealed partial class SeedSecrets(IConfiguration configuration)
     /// <summary>Anfang des Platzhalters, den das Modul keyvault in neue Secrets schreibt; danach folgt der Secret-Name.</summary>
     public const string PlaceholderPrefix = "seed-placeholder:";
 
+    /// <summary>
+    /// Adresse des Key Vaults, z. B. <c>https://kv-name.vault.azure.net/</c>, als App-Setting
+    /// <c>Seed__KeyVaultUri</c>. Nur damit liest <see cref="GetExpirationsAsync"/> Ablaufdaten:
+    /// Nach dem Start stehen in den App-Settings die Werte, nicht mehr die Referenzen auf den Vault.
+    /// </summary>
+    public const string KeyVaultUriKey = "Seed:KeyVaultUri";
+
+    /// <summary>
+    /// So lange vor Ablauf meldet der Health-Report ein Secret, wie das Key-Vault-Ereignis
+    /// <c>SecretNearExpiry</c>.
+    /// </summary>
+    public static readonly TimeSpan ExpiryWarningPeriod = TimeSpan.FromDays(30);
+
+    // So heißt KeyVaultUriKey in Azure; der Health-Report nennt es bei expiryUnknown.
+    internal const string KeyVaultUriSetting = "Seed__KeyVaultUri";
+
     // Kann die Plattform eine Referenz nicht auflösen, bleibt der Referenztext als Wert stehen.
     internal const string ReferencePrefix = "@Microsoft.KeyVault(";
 
-    private readonly Lazy<IReadOnlyList<SeedSecretProblem>> problems = new(() => FindProblems(configuration));
+    // So lange wartet der Health-Report auf den Vault; danach meldet er expiryUnknown, der Aufruf
+    // läuft im Hintergrund weiter und füllt den Zwischenspeicher für den nächsten.
+    internal static readonly TimeSpan DefaultHealthWait = TimeSpan.FromSeconds(5);
+
+    private readonly IConfiguration configuration;
+    private readonly SeedSecretExpiryCache? expiry;
+    private readonly TimeProvider time;
+    private readonly TimeSpan healthWait;
+    private readonly Lazy<IReadOnlyList<SeedSecretProblem>> problems;
+
+    /// <summary>Secrets aus der Konfiguration, ohne Ablaufdaten aus dem Vault.</summary>
+    public SeedSecrets(IConfiguration configuration)
+        : this(configuration, expiry: null, TimeProvider.System)
+    {
+    }
+
+    internal SeedSecrets(IConfiguration configuration, SeedSecretExpiryCache? expiry, TimeProvider time, TimeSpan? healthWait = null)
+    {
+        this.configuration = configuration;
+        this.expiry = expiry;
+        this.time = time;
+        this.healthWait = healthWait ?? DefaultHealthWait;
+        problems = new(() => FindProblems(configuration));
+    }
 
     /// <summary>
     /// Alle App-Settings mit Platzhalter oder nicht aufgelöster Key-Vault-Referenz, auch außerhalb
@@ -60,6 +99,79 @@ public sealed partial class SeedSecrets(IConfiguration configuration)
             _ => value,
         };
     }
+
+    /// <summary>
+    /// Ablaufdaten der Secrets aus <c>keyVault.secrets</c>, soweit im Key Vault eines gesetzt ist,
+    /// nach Datum sortiert. Gezählt werden aktivierte Secrets, zu denen es ein App-Setting
+    /// <c>Secrets__&lt;Name&gt;</c> gibt. Ohne <see cref="KeyVaultUriKey"/> ist die Liste leer.
+    /// Seed erzwingt kein Ablaufdatum.
+    /// </summary>
+    /// <remarks>
+    /// Ein Aufruf liest höchstens einmal je Stunde aus dem Vault, sonst aus dem Zwischenspeicher.
+    /// Die Daten sind für Angemeldete gedacht, etwa hinter <c>[RequireCapability]</c>; der anonyme
+    /// Health-Report nennt nur Secrets, die bald ablaufen (<see cref="SeedHealthReport.CreateAsync"/>).
+    /// </remarks>
+    /// <exception cref="InvalidOperationException">Der Vault ließ sich nicht lesen; Einzelheiten in der inneren Exception.</exception>
+    public async Task<IReadOnlyList<SeedSecretExpiration>> GetExpirationsAsync(CancellationToken cancellationToken = default)
+    {
+        if (expiry is null)
+        {
+            return [];
+        }
+
+        var snapshot = await expiry.GetAsync().WaitAsync(cancellationToken);
+        return snapshot.Error is null
+            ? Managed(snapshot.Secrets)
+            : throw new InvalidOperationException($"Die Ablaufdaten der Secrets ließen sich nicht aus dem Key Vault ({KeyVaultUriSetting}) lesen.", snapshot.Error);
+    }
+
+    /// <summary>
+    /// Funde für den Health-Report: abgelaufene und in <see cref="ExpiryWarningPeriod"/> ablaufende
+    /// Secrets, oder <see cref="SeedSecretState.ExpiryUnknown"/>, wenn der Vault nicht antwortet.
+    /// </summary>
+    internal async Task<IReadOnlyList<SeedSecretProblem>> FindExpiryProblemsAsync(CancellationToken cancellationToken)
+    {
+        if (expiry is null)
+        {
+            return [];
+        }
+
+        SeedSecretExpirySnapshot snapshot;
+        try
+        {
+            snapshot = await expiry.GetAsync().WaitAsync(healthWait, time, cancellationToken);
+        }
+        catch (TimeoutException)
+        {
+            return [new SeedSecretProblem(KeyVaultUriSetting, null, SeedSecretState.ExpiryUnknown)];
+        }
+
+        if (snapshot.Error is not null)
+        {
+            return [new SeedSecretProblem(KeyVaultUriSetting, null, SeedSecretState.ExpiryUnknown)];
+        }
+
+        var now = time.GetUtcNow();
+        return Managed(snapshot.Secrets)
+            .Where(e => e.ExpiresOn <= now + ExpiryWarningPeriod)
+            .Select(e => new SeedSecretProblem(e.Setting, e.Secret, e.ExpiresOn <= now ? SeedSecretState.Expired : SeedSecretState.Expiring)
+            {
+                ExpiresOn = e.ExpiresOn,
+            })
+            .ToList();
+    }
+
+    // Nur Secrets aus keyVault.secrets: Für jedes setzt das Modul keyvault Secrets__<Name>. Ein
+    // deaktiviertes Secret ist ohnehin nicht nutzbar (Referenz unresolved), sein Ablauf zählt nicht.
+    private List<SeedSecretExpiration> Managed(IEnumerable<SeedVaultSecret> secrets) =>
+        secrets
+            .Where(s => s.Enabled && s.ExpiresOn is not null && SecretNamePattern().IsMatch(s.Name))
+            .Select(s => (Secret: s, Key: ConfigurationKey(s.Name)))
+            .Where(s => configuration[s.Key] is not null)
+            .Select(s => new SeedSecretExpiration(AppSettingName(s.Key), s.Secret.Name, s.Secret.ExpiresOn!.Value))
+            .OrderBy(e => e.ExpiresOn)
+            .ThenBy(e => e.Secret, StringComparer.Ordinal)
+            .ToList();
 
     /// <summary>
     /// Konfigurationsschlüssel eines Secrets: Jedes Wort beginnt groß, die Bindestriche entfallen
@@ -118,13 +230,18 @@ public sealed partial class SeedSecrets(IConfiguration configuration)
     private static partial Regex ReferenceSecretNamePattern();
 }
 
-/// <summary>Ein App-Setting, dessen Secret fehlt.</summary>
+/// <summary>Ein App-Setting, dessen Secret fehlt, bald abläuft oder abgelaufen ist.</summary>
 /// <param name="Setting">Name des App-Settings in Azure, z. B. <c>Secrets__StripeKey</c>.</param>
 /// <param name="Secret">Name des Secrets im Key Vault, soweit erkennbar.</param>
-/// <param name="State">Platzhalter oder nicht aufgelöste Referenz.</param>
-public sealed record SeedSecretProblem(string Setting, string? Secret, SeedSecretState State);
+/// <param name="State">Was mit dem Secret ist.</param>
+public sealed record SeedSecretProblem(string Setting, string? Secret, SeedSecretState State)
+{
+    /// <summary>Ablaufdatum aus dem Key Vault, nur bei <c>expiring</c> und <c>expired</c>.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public DateTimeOffset? ExpiresOn { get; init; }
+}
 
-/// <summary>Warum ein Secret nicht nutzbar ist.</summary>
+/// <summary>Warum ein Secret nicht nutzbar ist oder bald nicht mehr.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter<SeedSecretState>))]
 public enum SeedSecretState
 {
@@ -138,4 +255,22 @@ public enum SeedSecretState
     /// </summary>
     [JsonStringEnumMemberName("unresolved")]
     Unresolved,
+
+    /// <summary>
+    /// Die aktuelle Version läuft in den nächsten 30 Tagen ab (<see cref="SeedSecretProblem.ExpiresOn"/>).
+    /// Neuen Wert setzen, am besten mit neuem Ablaufdatum.
+    /// </summary>
+    [JsonStringEnumMemberName("expiring")]
+    Expiring,
+
+    /// <summary>Das Ablaufdatum der aktuellen Version ist überschritten.</summary>
+    [JsonStringEnumMemberName("expired")]
+    Expired,
+
+    /// <summary>
+    /// Die Ablaufdaten ließen sich nicht aus dem Vault lesen (<c>Seed__KeyVaultUri</c>); Einzelheiten
+    /// stehen im Log. Die Secrets selbst können trotzdem funktionieren.
+    /// </summary>
+    [JsonStringEnumMemberName("expiryUnknown")]
+    ExpiryUnknown,
 }

@@ -51,7 +51,7 @@ public class SeedMcpRegistrationTests
 
         var names = app.Services.GetRequiredService<SeedMcpToolCatalog>().All.Select(t => t.Name);
 
-        Assert.Equal(["bericht", "rechnung_anlegen", "status", "wer_bin_ich"], names.Order());
+        Assert.Equal(["auftraege", "bericht", "rechnung_anlegen", "status", "wer_bin_ich"], names.Order());
     }
 
     [Fact]

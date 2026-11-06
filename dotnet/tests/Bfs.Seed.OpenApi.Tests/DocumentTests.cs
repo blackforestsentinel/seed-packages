@@ -14,6 +14,9 @@ public class DocumentTests
                 "/archive/{year} get ListArchive",
                 "/categories get ListCategories",
                 "/customers get ListCustomers",
+                "/deliveries get ListDeliveries",
+                "/deliveries post CreateDelivery",
+                "/deliveries/priority/{priority} get ListDeliveriesByPriority",
                 "/health get GetHealth",
                 "/me get GetMe",
                 "/orders get ListOrders",
@@ -22,6 +25,8 @@ public class DocumentTests
                 "/orders/{id} get GetOrder",
                 "/orders/{id} put OrderPut",
                 "/orders/{id} delete OrderDelete",
+                "/shipments get ListShipments",
+                "/shipments/{id} get GetShipment",
             ],
             App.Operations().Select(o => $"{o.Path} {o.Method} {o.Operation.Text("operationId")}"));
     }

@@ -9,5 +9,6 @@ Rule ID | Category | Severity | Notes
 --------|----------|----------|-------
 SEEDAUTH001 | Security | Error | SeedAuthorizationAnalyzer: HTTP-Function ohne Berechtigungsangabe
 SEEDAUTH002 | Security | Error | SeedAuthorizationAnalyzer: MCP-Werkzeug ohne Berechtigungsangabe
+SEEDAUTH003 | Security | Error | SeedAuthorizationAnalyzer: [AllowAnonymous] hebt andere Berechtigungsangaben auf
 SEEDSUPPRESS001 | Maintainability | Error | SeedSuppressionAnalyzer: [SuppressMessage] ohne Begründung
 SEEDSUPPRESS002 | Maintainability | Error | SeedSuppressionAnalyzer: #pragma warning disable ohne Begründung

@@ -25,6 +25,7 @@ public class SeedSecretExpiryTests
             ["Secrets:SmtpPassword"] = "harmlos",
             ["Secrets:OpenaiApiKey"] = "harmlos",
             ["Secrets:Webhook"] = "harmlos",
+            ["Secrets:SmtpUser"] = "harmlos",
         })
         .Build();
 
@@ -36,6 +37,8 @@ public class SeedSecretExpiryTests
         new("webhook", null),
         // Kein Secret aus keyVault.secrets: kein App-Setting Secrets__ManuellAngelegt.
         new("manuell-angelegt", Now.AddDays(1)),
+        // Deaktiviert: nicht nutzbar, sein Ablauf zählt nicht.
+        new("smtp-user", Now.AddDays(2), Enabled: false),
     ];
 
     [Fact]
@@ -58,6 +61,7 @@ public class SeedSecretExpiryTests
         Assert.DoesNotContain("openai", json);
         Assert.DoesNotContain("webhook", json, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("manuell", json);
+        Assert.DoesNotContain("smtp-user", json);
         Assert.DoesNotContain("harmlos", json);
     }
 
@@ -201,7 +205,7 @@ public class SeedSecretExpiryTests
         Assert.Equal(
             [
                 new SeedVaultSecret("stripe-key", DateTimeOffset.FromUnixTimeSeconds(1767225600)),
-                new SeedVaultSecret("webhook", null),
+                new SeedVaultSecret("webhook", null, Enabled: false),
                 new SeedVaultSecret("smtp-password", DateTimeOffset.FromUnixTimeSeconds(1764547200)),
             ],
             secrets);
@@ -339,7 +343,7 @@ public class SeedSecretExpiryTests
                 : """
                   {"value":[
                     {"id":"https://kv-example.vault.azure.net/secrets/stripe-key","attributes":{"enabled":true,"exp":1767225600}},
-                    {"id":"https://kv-example.vault.azure.net/secrets/webhook","attributes":{"enabled":true}}],
+                    {"id":"https://kv-example.vault.azure.net/secrets/webhook","attributes":{"enabled":false}}],
                    "nextLink":"https://kv-example.vault.azure.net/secrets?api-version=7.6&$skiptoken=seite2&maxresults=25"}
                   """;
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(json, Encoding.UTF8, "application/json") });

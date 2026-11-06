@@ -102,7 +102,7 @@ public sealed partial class SeedSecrets
 
     /// <summary>
     /// Ablaufdaten der Secrets aus <c>keyVault.secrets</c>, soweit im Key Vault eines gesetzt ist,
-    /// nach Datum sortiert. Gezählt werden Secrets, zu denen es ein App-Setting
+    /// nach Datum sortiert. Gezählt werden aktivierte Secrets, zu denen es ein App-Setting
     /// <c>Secrets__&lt;Name&gt;</c> gibt. Ohne <see cref="KeyVaultUriKey"/> ist die Liste leer.
     /// Seed erzwingt kein Ablaufdatum.
     /// </summary>
@@ -161,10 +161,11 @@ public sealed partial class SeedSecrets
             .ToList();
     }
 
-    // Nur Secrets aus keyVault.secrets: Für jedes setzt das Modul keyvault Secrets__<Name>.
+    // Nur Secrets aus keyVault.secrets: Für jedes setzt das Modul keyvault Secrets__<Name>. Ein
+    // deaktiviertes Secret ist ohnehin nicht nutzbar (Referenz unresolved), sein Ablauf zählt nicht.
     private List<SeedSecretExpiration> Managed(IEnumerable<SeedVaultSecret> secrets) =>
         secrets
-            .Where(s => s.ExpiresOn is not null && SecretNamePattern().IsMatch(s.Name))
+            .Where(s => s.Enabled && s.ExpiresOn is not null && SecretNamePattern().IsMatch(s.Name))
             .Select(s => (Secret: s, Key: ConfigurationKey(s.Name)))
             .Where(s => configuration[s.Key] is not null)
             .Select(s => new SeedSecretExpiration(AppSettingName(s.Key), s.Secret.Name, s.Secret.ExpiresOn!.Value))

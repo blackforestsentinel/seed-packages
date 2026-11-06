@@ -12,8 +12,8 @@ namespace Bfs.Seed.Functions.Core;
 /// <param name="ExpiresOn">Ablaufdatum der aktuellen Version (Attribut <c>exp</c>).</param>
 public sealed record SeedSecretExpiration(string Setting, string Secret, DateTimeOffset ExpiresOn);
 
-/// <summary>Name und Ablaufdatum eines Secrets im Vault, ohne Wert.</summary>
-internal readonly record struct SeedVaultSecret(string Name, DateTimeOffset? ExpiresOn);
+/// <summary>Name, Ablaufdatum und Zustand der aktuellen Version eines Secrets im Vault, ohne Wert.</summary>
+internal readonly record struct SeedVaultSecret(string Name, DateTimeOffset? ExpiresOn, bool Enabled = true);
 
 /// <summary>Liest die Secrets eines Vaults samt Ablaufdatum, nie ihre Werte.</summary>
 internal interface ISeedVaultSecretSource
@@ -33,7 +33,7 @@ internal sealed class SeedKeyVaultSecretSource(SecretClient client) : ISeedVault
         var secrets = new List<SeedVaultSecret>();
         await foreach (var properties in client.GetPropertiesOfSecretsAsync(cancellationToken))
         {
-            secrets.Add(new SeedVaultSecret(properties.Name, properties.ExpiresOn));
+            secrets.Add(new SeedVaultSecret(properties.Name, properties.ExpiresOn, properties.Enabled ?? true));
         }
 
         return secrets;

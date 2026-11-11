@@ -523,6 +523,34 @@ describe('CurrentUserMenu', () => {
     expect(storage.length).toBe(0);
   });
 
+  it('leert die Zwischenspeicher auch, wenn die App auth.logout() direkt aufruft', async () => {
+    const logout = vi.fn(async () => {});
+    const auth = fakeAuth({ logout });
+    const storage = memoryStorage();
+    const graph = createFakeGraph({ photos: [people.erika.id] });
+    const directory = createGraphDirectory({ config: directoryConfig, getAccessToken: async () => 't', fetch: graph.fetch, storage, batchDelay: 1 });
+    // Einträge eines früheren Kontos im sessionStorage des Tabs; fremde Schlüssel bleiben.
+    sessionStorage.setItem('seed-people.home-0.person:x', '{"v":null,"e":9999999999999}');
+    sessionStorage.setItem('andere-app', 'bleibt');
+    render(
+      <SeedUserProvider user={admin}>
+        <DirectoryProvider config={graphConfig} auth={auth} directory={directory}>
+          <CurrentUserMenu />
+        </DirectoryProvider>
+      </SeedUserProvider>,
+    );
+    await waitFor(() => expect(document.querySelector('.seed-avatar img')).toBeTruthy());
+    expect(storage.length).toBeGreaterThan(0);
+
+    await auth.logout();
+
+    expect(logout).toHaveBeenCalledOnce();
+    expect(storage.length).toBe(0);
+    expect(sessionStorage.getItem('seed-people.home-0.person:x')).toBeNull();
+    expect(sessionStorage.getItem('andere-app')).toBe('bleibt');
+    sessionStorage.clear();
+  });
+
   it('zeigt den Namen aus der Anmeldung, solange /api/me lädt, und ohne Anmeldung nichts', () => {
     const { unmount } = render(
       <SeedUserProvider load={() => new Promise<SeedUser>(() => {})}>

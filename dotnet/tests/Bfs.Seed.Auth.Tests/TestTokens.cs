@@ -39,7 +39,8 @@ public sealed class TestTokens
         string[]? roles = null,
         string? idtyp = null,
         string? clientId = SpaClientId,
-        string version = "2.0")
+        string version = "2.0",
+        IReadOnlyDictionary<string, object>? extraClaims = null)
     {
         var expiry = expires ?? DateTime.UtcNow.AddMinutes(30);
         var claims = new Dictionary<string, object> { ["oid"] = "55555555-5555-5555-5555-555555555555", ["tid"] = TenantId, ["ver"] = version };
@@ -65,6 +66,11 @@ public sealed class TestTokens
         if (idtyp is not null)
         {
             claims["idtyp"] = idtyp;
+        }
+
+        foreach (var (type, value) in extraClaims ?? new Dictionary<string, object>())
+        {
+            claims[type] = value;
         }
 
         return new JsonWebTokenHandler().CreateToken(new SecurityTokenDescriptor

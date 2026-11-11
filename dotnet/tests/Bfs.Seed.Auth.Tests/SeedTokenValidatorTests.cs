@@ -106,6 +106,29 @@ public class SeedTokenValidatorTests
             result.Principal!.GetRoleDetails());
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task SeedClaimsFromTheToken_AreDiscarded(bool appOnly)
+    {
+        // Capabilities und Anzeigenamen kommen nur aus auth.roles, nie aus dem Token selbst.
+        var token = tokens.CreateToken(
+            scope: appOnly ? null : "access_as_user",
+            roles: [appOnly ? "Sync" : "Reader"],
+            extraClaims: new Dictionary<string, object>
+            {
+                [SeedClaimTypes.Capability] = new[] { "invoices.delete", "invoices.write" },
+                [SeedClaimTypes.RoleDisplayName] = "Administrator",
+            });
+
+        var result = await CreateValidator(Map).ValidateAsync(token, TestContext.Current.CancellationToken);
+
+        Assert.True(result.IsValid);
+        Assert.Equal(appOnly ? ["invoices.sync"] : ["invoices.read"], result.Principal!.GetCapabilities());
+        Assert.DoesNotContain(result.Principal!.Claims, c => c.Type == SeedClaimTypes.Capability && c.Value is "invoices.delete" or "invoices.write");
+        Assert.DoesNotContain(result.Principal!.Claims, c => c.Type == SeedClaimTypes.RoleDisplayName && c.Value == "Administrator");
+    }
+
     [Fact]
     public async Task DelegatedToken_GetsNoCapabilitiesFromApplicationOnlyRole()
     {

@@ -8,6 +8,11 @@
 #   Neue Pakete stellt der Workflow per npm stage publish bereit (Secret NPM_STAGE_TOKEN),
 #   online gehen sie nach Freigabe mit 2FA; danach Trusted Publisher einrichten.
 #
+# Bauen, Testen und Packen laufen in eigenen Jobs ohne id-token und ohne Environment release.
+# Die Publish-Jobs laden nur die fertigen Pakete als Artefakt herunter, checken das Repo nicht aus
+# und führen keinen Code daraus aus; nur sie bekommen das OIDC-Token. Workflow-Datei und
+# Environment-Name sind an die Trusted Publisher auf nuget.org und npmjs.com gebunden.
+#
 # Actions sind auf den Commit gepinnt (Version als Kommentar); Dependabot schlägt Updates vor.
 name: Release
 
@@ -15,7 +20,7 @@ on:
   push:
     tags: ['v*.*.*']
 
-# Ohne Rechte als Vorgabe; jeder Job nennt, was er braucht. id-token (OIDC) nur zum Veröffentlichen.
+# Ohne Rechte als Vorgabe; jeder Job nennt, was er braucht. id-token (OIDC) nur in den Publish-Jobs.
 permissions: {}
 
 concurrency:
@@ -52,13 +57,11 @@ jobs:
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
-  nuget:
+  nuget-build:
     needs: version
     runs-on: ubuntu-24.04
-    environment: release
     permissions:
       contents: read
-      id-token: write
     defaults:
       run:
         working-directory: dotnet
@@ -73,6 +76,31 @@ jobs:
       - run: dotnet pack --configuration Release --output ../artifacts/nuget -p:Version="$VERSION"
         env:
           VERSION: ${{ needs.version.outputs.version }}
+      # Pakete samt Symbolpaketen; dotnet nuget push schickt die .snupkg neben einer .nupkg mit.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: nuget
+          path: |
+            artifacts/nuget/*.nupkg
+            artifacts/nuget/*.snupkg
+          if-no-files-found: error
+          retention-days: 7
+
+  nuget:
+    needs: nuget-build
+    runs-on: ubuntu-24.04
+    environment: release
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: nuget
+          path: artifacts/nuget
+      # Nur für dotnet nuget push; gebaut ist schon alles.
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 10.0.x
       - uses: NuGet/login@8d196754b4036150537f80ac539e15c2f1028841 # v1.2.0
         id: login
         with:
@@ -82,7 +110,7 @@ jobs:
       # aus NuGet/login gilt eine Stunde; 45 Minuten bleiben darunter. Er kommt über env,
       # nicht als Ausdruck im Skript.
       - run: >
-          dotnet nuget push "../artifacts/nuget/*.nupkg"
+          dotnet nuget push "artifacts/nuget/*.nupkg"
           --api-key "$NUGET_API_KEY"
           --source https://api.nuget.org/v3/index.json
           --skip-duplicate
@@ -90,13 +118,11 @@ jobs:
         env:
           NUGET_API_KEY: ${{ steps.login.outputs.NUGET_API_KEY }}
 
-  npm:
+  npm-build:
     needs: version
     runs-on: ubuntu-24.04
-    environment: release
     permissions:
       contents: read
-      id-token: write
     defaults:
       run:
         working-directory: web
@@ -107,7 +133,7 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
-          registry-url: https://registry.npmjs.org
+      # Ohne Lifecycle-Skripte der Abhängigkeiten (web/.npmrc: ignore-scripts=true).
       - run: npm ci
       # Version und Abhängigkeiten der Pakete untereinander (im Repo 0.0.0-dev), etwa die
       # Peer-Abhängigkeit von seed-web-people auf seed-web-auth. npm version passt diese nicht an.
@@ -116,32 +142,69 @@ jobs:
           VERSION: ${{ needs.version.outputs.version }}
       - run: npm run build
       - run: npm test
+      - run: |
+          mkdir -p "$GITHUB_WORKSPACE/artifacts/npm"
+          npm pack --workspaces --pack-destination "$GITHUB_WORKSPACE/artifacts/npm"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: npm
+          path: artifacts/npm/*.tgz
+          if-no-files-found: error
+          retention-days: 7
+
+  npm:
+    needs: [version, npm-build]
+    runs-on: ubuntu-24.04
+    environment: release
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: npm
+          path: artifacts/npm
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
       # npm stage gibt es ab npm 11.17; die Version ist fest, damit der Ablauf reproduzierbar bleibt.
-      - run: npm install -g npm@11.17.0
+      - run: npm install -g npm@11.17.0 --ignore-scripts
+      # Veröffentlicht werden die Tarballs aus npm-build, ohne Skripte und ohne Checkout.
       # Bestehende Pakete: npm publish per Trusted Publishing (OIDC).
       # Neue Pakete: npm stage publish mit dem Secret NPM_STAGE_TOKEN (Berechtigung "stage only");
       # online gehen sie erst nach Freigabe mit 2FA (npm stage approve oder npmjs.com).
       - name: npm publish
         env:
           NPM_STAGE_TOKEN: ${{ secrets.NPM_STAGE_TOKEN }}
+          VERSION: ${{ needs.version.outputs.version }}
         run: |
           set -euo pipefail
+          shopt -s nullglob
+          tarballs=(artifacts/npm/*.tgz)
+          if [ "${#tarballs[@]}" -eq 0 ]; then
+            echo "::error::Das Artefakt npm enthält keine Pakete."
+            exit 1
+          fi
           failed=()
-          for manifest in packages/*/package.json; do
-            name="$(node -p "require('./$manifest').name")"
-            version="$(node -p "require('./$manifest').version")"
+          for tarball in "${tarballs[@]}"; do
+            manifest="$(tar -xzOf "$tarball" package/package.json)"
+            name="$(node -p 'JSON.parse(process.argv[1]).name' "$manifest")"
+            version="$(node -p 'JSON.parse(process.argv[1]).version' "$manifest")"
+            if [ "$version" != "$VERSION" ]; then
+              echo "::error::$tarball hat die Version $version statt $VERSION."
+              failed+=("$name")
             # Wiederholbar: bereits veröffentlichte Versionen überspringen.
-            if npm view "$name@$version" version >/dev/null 2>&1; then
+            elif npm view "$name@$version" version >/dev/null 2>&1; then
               echo "$name@$version ist schon veröffentlicht."
             elif npm view "$name" name >/dev/null 2>&1; then
               echo "$name: npm publish"
-              npm publish -w "$name" --access public --provenance || failed+=("$name")
+              npm publish "$tarball" --access public --provenance --ignore-scripts || failed+=("$name")
             elif [ -z "$NPM_STAGE_TOKEN" ]; then
               echo "::error::$name ist neu auf npm. Dafür braucht der Workflow das Secret NPM_STAGE_TOKEN (Granular Token, stage only)."
               failed+=("$name")
             else
               echo "::notice::$name ist neu und wird per npm stage publish bereitgestellt. Freigabe: npm stage list, dann npm stage approve <id>."
-              NODE_AUTH_TOKEN="$NPM_STAGE_TOKEN" npm stage publish -w "$name" --access public --provenance || failed+=("$name")
+              NODE_AUTH_TOKEN="$NPM_STAGE_TOKEN" npm stage publish "$tarball" --access public --provenance --ignore-scripts || failed+=("$name")
             fi
           done
           if [ "${#failed[@]}" -gt 0 ]; then

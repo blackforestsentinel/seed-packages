@@ -38,6 +38,8 @@ git push origin v0.1.0
 
 Der Tag muss auf einem Commit liegen, der schon auf `main` ist; sonst bricht der Workflow ab, bevor er baut. Die Actions in den Workflows sind auf den Commit gepinnt, Updates schlägt Dependabot vor ([`.github/dependabot.yml`](.github/dependabot.yml)).
 
+Bauen, Testen und Packen laufen in eigenen Jobs ohne OIDC-Token und ohne Environment `release`; sie laden die Pakete (`.nupkg`/`.snupkg`, npm-Tarballs) als Artefakt hoch. Nur die Publish-Jobs `nuget` und `npm` bekommen das Token, laden die Artefakte herunter und veröffentlichen sie, ohne das Repo auszuchecken. Code aus Tests, Build-Tasks oder Abhängigkeiten kommt so nicht an das Token. [`web/.npmrc`](web/.npmrc) schaltet Lifecycle-Skripte der Abhängigkeiten ab (`ignore-scripts=true`), auch lokal; `npm run build` und `npm test` laufen weiter.
+
 Der Workflow authentifiziert sich per Trusted Publishing (OIDC) bei nuget.org und npm. Einrichtung:
 
 - **nuget.org:** Trusted-Publishing-Richtlinie für `blackforestsentinel/seed-packages`, Workflow `release.yml`, Environment `release`. Variable `NUGET_USER` im Environment `release` mit dem nuget.org-Benutzernamen.

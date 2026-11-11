@@ -8,7 +8,7 @@ import {
   type IPublicClientApplication,
 } from '@azure/msal-browser';
 
-import type { SeedAuthConfig } from './config.js';
+import { assertTenantId, type SeedAuthConfig } from './config.js';
 import { SeedAuthRedirectError, SeedAuthScopeError } from './errors.js';
 
 export { isSeedAuthConfig, isSeedLocalAuthConfig } from './config.js';
@@ -73,6 +73,7 @@ function requiresInteraction(error: unknown): boolean {
  * account gesetzt, wenn die Person angemeldet ist.
  */
 export async function createSeedAuth(config: SeedAuthConfig, options: SeedAuthOptions = {}): Promise<SeedAuth> {
+  assertTenantId(config);
   const origin = typeof window === 'undefined' ? '' : window.location.origin;
   const redirectUri = options.redirectUri ?? `${origin}/`;
   const bridgeUri = options.redirectBridgeUri ?? (config.redirectBridgePath ? `${origin}${config.redirectBridgePath}` : undefined);

@@ -35,6 +35,9 @@ public static class SeedMcpExtensions
             .PostConfigure(o => o.ServerName ??= configuration["Seed:Project"])
             .Validate(o => SeedMcpResource.IsValidConfiguredResource(o.Resource),
                 $"Mcp:Resource muss eine https-Adresse ohne Query sein, die auf {SeedMcp.Path} endet, z. B. https://mcp.example.org{SeedMcp.Path}.")
+            // Baut die Werkzeugliste schon beim Start: Ein Werkzeug ohne Berechtigungsangabe hält die
+            // App an, nicht erst den ersten Aufruf von /api/mcp.
+            .Validate<SeedMcpToolCatalog>((_, catalog) => catalog.All is not null)
             .ValidateOnStart();
 
         // Damit nennt jede 401-Antwort der Token-Prüfung die Metadaten als resource_metadata.

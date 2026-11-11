@@ -9,7 +9,7 @@
 
 import type { AccountInfo } from '@azure/msal-browser';
 
-import type { SeedAuthConfig } from './config.js';
+import { assertTenantId, type SeedAuthConfig } from './config.js';
 import { SeedAuthInteractionRequiredError, SeedAuthScopeError } from './errors.js';
 import type { SeedAuth } from './index.js';
 
@@ -71,7 +71,8 @@ export interface SeedExtensionAuthOptions {
    * - local: chrome.storage.local, überdauert Neustarts, solange das Refresh-Token gilt (24 Stunden).
    *   Es liegt dann unverschlüsselt auf der Platte und ist für die Content Scripts der Erweiterung
    *   lesbar; nur nehmen, wenn die stille Anmeldung nach einem Neustart nicht reicht.
-   * Beim Start löscht createSeedExtensionAuth die Tokens aus dem jeweils anderen Bereich.
+   * Das Konto (Name, Benutzername, oid, tid) liegt im selben Bereich wie die Tokens. Beim Start
+   * löscht createSeedExtensionAuth Tokens und Konto aus dem jeweils anderen Bereich.
    */
   tokenStorage?: 'session' | 'local';
   /** Ersatz für chrome.identity und chrome.storage, etwa in Tests. Default globalThis.chrome. */
@@ -88,6 +89,8 @@ export interface SeedExtensionAuthOptions {
 interface StoredTokens {
   refreshToken?: string;
   accessTokens: Record<string, { token: string; expiresOn: number }>;
+  /** Konto aus dem letzten ID-Token (oid.tid), zu dem diese Tokens gehören. */
+  homeAccountId?: string;
 }
 
 /** Code aus launchWebAuthFlow samt dem, was zum Einlösen gehört. */
@@ -145,7 +148,7 @@ class EntraError extends Error {
 
 /**
  * Anmeldung für eine Browser-Erweiterung mit demselben Interface wie createSeedAuth. account kommt
- * sofort aus chrome.storage.local, ohne Netz und ohne Token.
+ * sofort aus dem Bereich der Tokens (Default chrome.storage.session), ohne Netz und ohne Token.
  *
  * getAccessToken öffnet nie ein Fenster: erst Access-Token aus dem Speicher oder per Refresh-Token,
  * dann still per launchWebAuthFlow mit prompt=none über die Sitzung bei Entra ID, sonst
@@ -153,6 +156,7 @@ class EntraError extends Error {
  * einem Klick auf. redirectBridgePath aus der Konfiguration gilt hier nicht.
  */
 export async function createSeedExtensionAuth(config: SeedAuthConfig, options: SeedExtensionAuthOptions = {}): Promise<SeedAuth> {
+  assertTenantId(config);
   const browser = options.browser ?? (globalThis as { chrome?: SeedExtensionBrowserApi }).chrome;
   if (!browser?.identity || !browser.storage) {
     throw new Error('seed-web-auth/extension: chrome.identity und chrome.storage fehlen. Braucht die Erweiterung die Berechtigungen identity und storage?');
@@ -165,31 +169,58 @@ export async function createSeedExtensionAuth(config: SeedAuthConfig, options: S
   const apiScopes = [config.apiScope];
   const apiKey = scopeKey(apiScopes);
 
-  // Konto in local, damit es Neustarts überdauert und auch der Service Worker den login_hint kennt.
-  // Tokens je nach Option; die Merker, was ohne Fenster nicht ging, gelten je Browser-Sitzung, weil
-  // ständig neue Tabs entstehen.
+  // Konto und Tokens im selben Bereich: chrome.storage.local lesen und schreiben auch die Content
+  // Scripts der Erweiterung, die in fremden Webseiten laufen; chrome.storage.session nicht. In local
+  // liegt beim Default nur der Merker signedIn ohne Angaben zur Person: Nach einem Neustart meldet
+  // getAccessToken damit still an, ohne login_hint. Die Merker, was ohne Fenster nicht ging, gelten
+  // je Browser-Sitzung, weil ständig neue Tabs entstehen.
   const accountKey = `seed-auth.${config.clientId}.account`;
   const tokensKey = `seed-auth.${config.clientId}.tokens`;
   const blockedKey = `seed-auth.${config.clientId}.blocked`;
+  const signedInKey = `seed-auth.${config.clientId}.signedIn`;
   const lockName = `seed-auth.${config.clientId}`;
+  const tokenAreaName = options.tokenStorage === 'local' ? 'local' : 'session';
   const tokenArea = options.tokenStorage === 'local' ? browser.storage.local : browser.storage.session;
   const otherTokenArea = options.tokenStorage === 'local' ? browser.storage.session : browser.storage.local;
 
-  // Tokens nur im gewählten Bereich: Nach einem Wechsel von local zurück auf session bliebe sonst
-  // ein Refresh-Token auf der Platte liegen.
-  const [stored] = await Promise.all([browser.storage.local.get(accountKey), otherTokenArea.remove(tokensKey)]);
+  // Konto und Tokens nur im gewählten Bereich: Nach einem Wechsel von local zurück auf session
+  // blieben sonst Refresh-Token und Konto auf der Platte liegen. Ein Konto dort (auch aus einer
+  // älteren Version) zählt nur als Merker für die stille Anmeldung, nicht als login_hint.
+  const [stored, other] = await Promise.all([tokenArea.get(accountKey), otherTokenArea.get(accountKey)]);
+  await Promise.all([
+    otherTokenArea.remove([tokensKey, accountKey]),
+    parseAccount(other[accountKey]) ? browser.storage.local.set({ [signedInKey]: true }) : Promise.resolve(),
+  ]);
   let account = parseAccount(stored[accountKey]);
   const pending = new Map<string, Promise<string>>();
 
   browser.storage.onChanged?.addListener((changes, areaName) => {
-    if (areaName === 'local' && accountKey in changes) {
-      account = parseAccount(changes[accountKey]?.newValue);
+    if (areaName !== tokenAreaName || !(accountKey in changes)) {
+      return;
+    }
+    const value = changes[accountKey]?.newValue;
+    if (value === undefined) {
+      // Abgemeldet in einer anderen Seite.
+      account = null;
+      return;
+    }
+    // Ein Konto nur zusammen mit den Tokens aus seinem ID-Token: store() schreibt beides in einem
+    // Schritt. Ein Konto allein, etwa aus einem Content Script, steuerte sonst den login_hint.
+    const next = parseAccount(value);
+    const tokens = changes[tokensKey]?.newValue as Partial<StoredTokens> | undefined;
+    if (next && tokens?.homeAccountId === next.homeAccountId) {
+      account = next;
     }
   });
 
   async function readTokens(): Promise<StoredTokens> {
     const stored = (await tokenArea.get(tokensKey))[tokensKey] as Partial<StoredTokens> | undefined;
-    return { refreshToken: stored?.refreshToken, accessTokens: { ...stored?.accessTokens } };
+    return { refreshToken: stored?.refreshToken, accessTokens: { ...stored?.accessTokens }, homeAccountId: stored?.homeAccountId };
+  }
+
+  /** Ob jemand angemeldet war und sich nicht abgemeldet hat, auch vor einem Neustart. */
+  async function wasSignedIn(): Promise<boolean> {
+    return (await browser!.storage.local.get(signedInKey))[signedInKey] === true;
   }
 
   async function readBlocked(): Promise<Record<string, Blocked>> {
@@ -219,19 +250,25 @@ export async function createSeedExtensionAuth(config: SeedAuthConfig, options: S
     if (!response.access_token) {
       throw new Error('Token-Endpunkt: Antwort ohne access_token.');
     }
-    if (response.id_token) {
-      const next = accountFromIdToken(response.id_token, config.clientId, nonce);
-      if (next.homeAccountId !== account?.homeAccountId || next.username !== account.username || next.name !== account.name) {
-        account = next;
-        await browser!.storage.local.set({ [accountKey]: next });
-      }
-    }
     const tokens: StoredTokens = replace ? { accessTokens: {} } : await readTokens();
     tokens.accessTokens[key] = { token: response.access_token, expiresOn: now() + Number(response.expires_in ?? 3600) * 1000 };
     if (response.refresh_token) {
       tokens.refreshToken = response.refresh_token;
     }
-    await tokenArea.set({ [tokensKey]: tokens });
+    let changed: AccountInfo | null = null;
+    if (response.id_token) {
+      const next = accountFromIdToken(response.id_token, config.clientId, nonce);
+      tokens.homeAccountId = next.homeAccountId;
+      if (next.homeAccountId !== account?.homeAccountId || next.username !== account.username || next.name !== account.name) {
+        changed = next;
+      }
+    }
+    // Konto und Tokens in einem Schritt, damit die anderen Seiten beides zusammen sehen (onChanged).
+    await tokenArea.set({ [tokensKey]: tokens, ...(changed ? { [accountKey]: changed } : {}) });
+    if (changed) {
+      account = changed;
+      await browser!.storage.local.set({ [signedInKey]: true });
+    }
     return response.access_token;
   }
 
@@ -348,7 +385,8 @@ export async function createSeedExtensionAuth(config: SeedAuthConfig, options: S
     if (token) {
       return token;
     }
-    if (!account) {
+    // Ohne Konto nur nach einem Neustart weiter (Merker signedIn), dann ohne login_hint.
+    if (!account && !(await wasSignedIn())) {
       throw new SeedAuthInteractionRequiredError();
     }
 
@@ -366,7 +404,7 @@ export async function createSeedExtensionAuth(config: SeedAuthConfig, options: S
         // Abgelaufen oder widerrufen: Die anderen Seiten sollen es nicht noch einmal versuchen.
         // Fehlt nur die Einwilligung für diese Scopes, gilt es für die API weiter.
         if (!error.consent) {
-          await tokenArea.set({ [tokensKey]: { accessTokens: tokens.accessTokens } });
+          await tokenArea.set({ [tokensKey]: { accessTokens: tokens.accessTokens, homeAccountId: tokens.homeAccountId } });
         }
       }
     }
@@ -417,8 +455,8 @@ export async function createSeedExtensionAuth(config: SeedAuthConfig, options: S
       await withLock(async () => {
         account = null;
         await Promise.all([
-          browser.storage.local.remove([accountKey, tokensKey]),
-          browser.storage.session.remove([blockedKey, tokensKey]),
+          browser.storage.local.remove([accountKey, tokensKey, signedInKey]),
+          browser.storage.session.remove([accountKey, blockedKey, tokensKey]),
         ]);
       });
     },

@@ -82,6 +82,36 @@ public class SeedMcpRegistrationTests
     }
 
     [Fact]
+    public void ToolWithoutAuthorization_IsRejected()
+    {
+        var error = Assert.Throws<InvalidOperationException>(() =>
+            SeedMcpToolCatalog.Build([typeof(UnmarkedTools)], new ServiceCollection().BuildServiceProvider()));
+
+        Assert.Contains("„offen“", error.Message);
+        Assert.Contains($"{typeof(UnmarkedTools).FullName}.{nameof(UnmarkedTools.Open)}", error.Message);
+        Assert.Contains("[RequireCapability(\"…\")], [RequireAnyRole] oder [AllowWithoutRole]", error.Message);
+    }
+
+    [Fact]
+    public void ToolWithoutAuthorization_StopsTheStart()
+    {
+        // ValidateOnStart prüft die Optionen beim Start des Hosts; hier dieselbe Auflösung direkt.
+        var app = McpTestApp.Create(configure: mcp => mcp.WithTools(typeof(UnmarkedTools)));
+
+        var error = Assert.Throws<InvalidOperationException>(() => app.Services.GetRequiredService<IOptions<SeedMcpOptions>>().Value);
+
+        Assert.Contains("„offen“", error.Message);
+    }
+
+    [Fact]
+    public void ToolWithAuthorizationOnClass_IsAccepted()
+    {
+        var tools = SeedMcpToolCatalog.Build([typeof(RoleTools)], new ServiceCollection().BuildServiceProvider());
+
+        Assert.True(Assert.Single(tools).RequiresRole);
+    }
+
+    [Fact]
     public void Functions_CarryTheAuthContract()
     {
         var mcp = typeof(SeedMcpFunctions).GetMethod(nameof(SeedMcpFunctions.McpAsync))!;
@@ -106,6 +136,21 @@ public class SeedMcpRegistrationTests
     public sealed class DuplicateTools
     {
         [McpServerTool(Name = "status")]
+        [AllowWithoutRole]
         public static string Status() => "doppelt";
+    }
+
+    // Ohne Berechtigungsangabe, etwa aus einer Assembly ohne den Analyzer.
+    public sealed class UnmarkedTools
+    {
+        [McpServerTool(Name = "offen")]
+        public static string Open() => "offen";
+    }
+
+    [RequireAnyRole]
+    public sealed class RoleTools
+    {
+        [McpServerTool(Name = "mit_rolle")]
+        public static string WithRole() => "ok";
     }
 }

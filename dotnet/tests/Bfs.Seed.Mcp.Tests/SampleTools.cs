@@ -7,11 +7,12 @@ using ModelContextProtocol.Server;
 
 namespace Bfs.Seed.Mcp.Tests;
 
-/// <summary>Werkzeuge für die Tests: frei, mit Capability, mit irgendeiner Rolle, mit Argumenten.</summary>
+/// <summary>Werkzeuge für die Tests: ohne Rolle, mit Capability, mit irgendeiner Rolle, mit Argumenten.</summary>
 [McpServerToolType]
 public sealed class SampleTools(Greeter greeter)
 {
     [McpServerTool(Name = "status", ReadOnly = true), Description("Liefert den Status.")]
+    [AllowWithoutRole]
     public static string Status() => "ok";
 
     [McpServerTool(Name = "rechnung_anlegen"), Description("Legt eine Rechnung an.")]
@@ -26,6 +27,7 @@ public sealed class SampleTools(Greeter greeter)
     public static string Orders() => "keine";
 
     [McpServerTool(Name = "wer_bin_ich", ReadOnly = true), Description("Nennt die angemeldete Person.")]
+    [AllowWithoutRole]
     public string WhoAmI(ClaimsPrincipal user) => greeter.Greet(user.FindFirst("name")?.Value);
 }
 
@@ -41,6 +43,7 @@ public sealed class ReportTools
 }
 
 /// <summary>Werkzeuge, die scheitern; nur für einzelne Tests registriert.</summary>
+[AllowWithoutRole]
 public sealed class FailingTools
 {
     [McpServerTool(Name = "fachfehler"), Description("Scheitert mit einer Meldung für das Modell.")]

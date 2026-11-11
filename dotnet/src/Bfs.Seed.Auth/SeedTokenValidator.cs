@@ -129,6 +129,13 @@ public sealed class SeedTokenValidator
             memberType = SeedMemberTypes.User;
         }
 
+        // Capabilities und Anzeigenamen setzt allein diese Prüfung. Gleichnamige Claims im Token
+        // (etwa aus einer Claims-Mapping-Policy) gelten nicht.
+        foreach (var claim in identity.Claims.Where(c => c.Type is SeedClaimTypes.Capability or SeedClaimTypes.RoleDisplayName).ToList())
+        {
+            identity.RemoveClaim(claim);
+        }
+
         foreach (var capability in capabilities.Resolve(roles, memberType))
         {
             identity.AddClaim(new Claim(SeedClaimTypes.Capability, capability));

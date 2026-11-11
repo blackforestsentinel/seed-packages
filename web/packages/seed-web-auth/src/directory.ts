@@ -14,12 +14,14 @@ export interface SeedDirectoryConfig {
   presence?: boolean;
   /**
    * Personen nach App-Rolle filtern. Braucht Application.Read.All und GroupMember.Read.All, beide
-   * mit Admin-Consent.
+   * mit Admin-Consent. Damit liest jeder Token-Inhaber der SPA über Graph alle Anwendungen,
+   * Rollenzuweisungen und Gruppenmitgliedschaften des Tenants; nur mit auth.assignmentRequired: true.
    */
   roleFilter?: boolean;
   /**
    * Service Principals (Anwendungen, verwaltete Identitäten) suchen und anzeigen. Braucht
-   * Application.Read.All mit Admin-Consent.
+   * Application.Read.All mit Admin-Consent. Damit liest jeder Token-Inhaber der SPA über Graph alle
+   * Anwendungen und Rollenzuweisungen des Tenants; nur mit auth.assignmentRequired: true.
    */
   servicePrincipals?: boolean;
   /** Client-ID der API-Registrierung; deren App-Rollen nennt der Filter. */

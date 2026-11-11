@@ -8,7 +8,8 @@ namespace Bfs.Seed.Mcp;
 /// <summary>
 /// Ein Werkzeug mit den Anforderungen aus seinen Attributen (an Methode und Klasse):
 /// <see cref="RequireCapabilityAttribute"/> und <see cref="RequireAnyRoleAttribute"/>. Vor dem
-/// Aufruf prüft es diese und die Argumente.
+/// Aufruf prüft es diese und die Argumente. <see cref="AllowWithoutRoleAttribute"/> verlangt nichts,
+/// legt aber ausdrücklich fest, dass jedes angemeldete Konto das Werkzeug verwenden darf.
 /// </summary>
 internal sealed class SeedMcpTool : DelegatingMcpServerTool
 {
@@ -20,7 +21,14 @@ internal sealed class SeedMcpTool : DelegatingMcpServerTool
             .Distinct(StringComparer.Ordinal)
             .ToArray();
         RequiresRole = inner.Metadata.OfType<RequireAnyRoleAttribute>().Any();
+        HasAuthorization = RequiredCapabilities.Count > 0 || RequiresRole || inner.Metadata.OfType<AllowWithoutRoleAttribute>().Any();
     }
+
+    /// <summary>
+    /// Ob Methode oder Klasse festlegen, wer das Werkzeug verwenden darf: <see cref="RequireCapabilityAttribute"/>,
+    /// <see cref="RequireAnyRoleAttribute"/> oder <see cref="AllowWithoutRoleAttribute"/>.
+    /// </summary>
+    public bool HasAuthorization { get; }
 
     /// <summary>Capabilities, die alle vorhanden sein müssen.</summary>
     public IReadOnlyList<string> RequiredCapabilities { get; }

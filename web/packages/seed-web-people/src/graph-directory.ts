@@ -93,7 +93,7 @@ export function createGraphDirectory(options: GraphDirectoryOptions): Directory 
   const now = options.now ?? Date.now;
   const ttl = { ...DEFAULT_TTL, ...options.ttl };
   const storage = options.storage === undefined ? defaultStorage() : options.storage;
-  const cache = new TtlCache(`seed-people.${options.cacheKey ?? 'default'}.`, storage, now);
+  const cache = new TtlCache(`${PEOPLE_CACHE_PREFIX}${options.cacheKey ?? 'default'}.`, storage, now);
 
   // Ohne Token (fehlende Einwilligung, Netz) pausiert das Paket Graph eine Weile, statt jede
   // Komponente einzeln scheitern zu lassen.
@@ -357,8 +357,9 @@ export function createGraphDirectory(options: GraphDirectoryOptions): Directory 
       }
       const response = await client.get(`/users/${encodeURIComponent(id)}/photos/${size}x${size}/$value`, { binary: true });
       if (response.status === 200 && typeof response.body === 'string') {
-        const type = (response.headers['content-type'] ?? 'image/jpeg').split(';')[0];
-        const url = `data:${type};base64,${response.body}`;
+        // Nur Bildformate, die jeder Browser in <img> zeigt; alles andere gilt als kein Foto.
+        const type = (response.headers['content-type'] ?? 'image/jpeg').split(';')[0]!.trim().toLowerCase();
+        const url = PHOTO_TYPES.has(type) ? `data:${type};base64,${response.body}` : null;
         cache.set(key, url, ttl.photo);
         return url;
       }
@@ -514,6 +515,11 @@ export function createGraphDirectory(options: GraphDirectoryOptions): Directory 
     },
   };
 }
+
+const PHOTO_TYPES = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
+
+/** Präfix aller Einträge im sessionStorage, je Konto gefolgt von dessen homeAccountId. */
+export const PEOPLE_CACHE_PREFIX = 'seed-people.';
 
 function toPerson(user: GraphUser): Person {
   return {

@@ -85,6 +85,19 @@ public class SeedSecretsTests
             secrets.Problems);
     }
 
+    [Theory]
+    [InlineData("seed-placeholder:<b>Bitte melden</b>")]
+    [InlineData("seed-placeholder:stripe-key\nAlles in Ordnung")]
+    [InlineData("seed-placeholder:Stripe_Key")]
+    [InlineData("seed-placeholder:")]
+    public void Problems_PlaceholderWithInvalidName_HasNoSecretName(string value)
+    {
+        // Wer den Wert schreiben kann, soll keinen beliebigen Text in Health-Antwort und Log bringen.
+        var problem = Assert.Single(Secrets(("Secrets:StripeKey", value)).Problems);
+
+        Assert.Equal(new SeedSecretProblem("Secrets__StripeKey", null, SeedSecretState.Placeholder), problem);
+    }
+
     [Fact]
     public void Problems_EmptyWithoutSecrets() =>
         Assert.Empty(Secrets(("Seed:Project", "kundenportal")).Problems);

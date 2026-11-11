@@ -207,12 +207,15 @@ public sealed partial class SeedSecrets
         : value.StartsWith(ReferencePrefix, StringComparison.OrdinalIgnoreCase) ? SeedSecretState.Unresolved
         : null;
 
-    // Nur aus Platzhalter oder Referenz, die beide keinen geheimen Wert enthalten.
+    // Nur aus Platzhalter oder Referenz, die beide keinen geheimen Wert enthalten. Der Name geht in
+    // die anonyme Health-Antwort und ins Log; aus dem Platzhalter zählt er deshalb nur, wenn er den
+    // Regeln für Secret-Namen folgt, sonst bleibt er leer.
     private static string? SecretNameOf(string value)
     {
         if (value.StartsWith(PlaceholderPrefix, StringComparison.Ordinal))
         {
-            return value[PlaceholderPrefix.Length..].Trim();
+            var name = value[PlaceholderPrefix.Length..].Trim();
+            return SecretNamePattern().IsMatch(name) ? name : null;
         }
 
         var match = ReferenceSecretNamePattern().Match(value);

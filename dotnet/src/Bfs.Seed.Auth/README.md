@@ -36,7 +36,7 @@ auth:
 ```
 
 - Terraform legt aus derselben Datei die App-Rollen an der API-Registrierung an. Personen und Gruppen weist ein Admin in Entra den Rollen zu.
-- Nach der Token-Prüfung löst die Middleware die Rollen aus dem `roles`-Claim in Capabilities auf und hängt sie als Claims `SeedClaimTypes.Capability` an `HttpContext.User`. Es zählen nur Rollen, deren `memberTypes` zum Aufrufer passen.
+- Nach der Token-Prüfung löst die Middleware die Rollen aus dem `roles`-Claim in Capabilities auf und hängt sie als Claims `SeedClaimTypes.Capability` an `HttpContext.User`. Es zählen nur Rollen, deren `memberTypes` zum Aufrufer passen. Claims vom Typ `SeedClaimTypes.Capability` oder `SeedClaimTypes.RoleDisplayName`, die schon im Token stehen, verwirft sie vorher; Capabilities kommen nur aus `auth.roles`.
 - `[RequireCapability("invoices.write")]` an Methode oder Klasse verlangt eine Capability; mehrere Attribute müssen alle erfüllt sein. `[RequireAnyRole]` verlangt irgendeine Rolle (unten). `User.HasCapability(...)`, `GetCapabilities()`, `GetRoles()` und `GetRoleDetails()` helfen im Code.
 - Eine Rolle darf ohne Capabilities sein (`capabilities: []` oder ohne den Schlüssel), etwa als Zielgruppe, die nur festlegt, welche Inhalte jemand sieht. Abfragen lässt sie sich mit `User.IsInRole("Team.Vertrieb")` oder `GetRoles()`; das Frontend sieht sie in `roles` von `GET /api/me`. Gruppen den Rollen zuzuweisen setzt in Entra ID P1 voraus.
 - `SeedUserInfo.From(User)` liefert Name, Benutzername, `oid`, `tid`, Rollen, Rollen mit Anzeigenamen und Capabilities, die Antwort für `GET /api/me`. Das Frontend blendet damit UI-Elemente ein oder aus, ohne die Zuordnung zu kennen. Den Endpunkt legt das Projekt selbst an (im Template `Me/MeFunction.cs`), damit er nicht mit vorhandenen Functions kollidiert und erweiterbar bleibt.
@@ -94,6 +94,7 @@ Ohne Attribut nimmt die Middleware jedes gültige Token an, auch von einem Konto
 - **`[AllowAnonymous]`** nimmt die Function ganz von der Token-Prüfung aus. Auch ein mitgeschicktes Token prüft die API dann nicht; `HttpContext.User` bleibt leer. Steht daneben an Methode oder Klasse ein anderes Attribut aus der Tabelle oder `[RequireScope]`, wirkt es nicht; der Build bricht mit SEEDAUTH003 ab.
 - `[RequireScope]` legt nur fest, mit welcher delegierten Berechtigung eine Anwendung im Namen der Person aufruft, nicht, wer die Person sein darf. Es ersetzt keines der Attribute oben.
 - Mit `auth.assignmentRequired: true` bekommt nur ein Token, wer einer Rolle zugewiesen ist, direkt oder über eine Gruppe. Dann wirken `[RequireAnyRole]` und `[AllowWithoutRole]` praktisch gleich.
+- Die Middleware liest die Attribute der Methode, deren `[Function]` den Namen der aufgerufenen Function trägt, nicht nur der Methode mit dem Namen aus dem Entry Point. Gleichnamige Methoden einer Klasse (Überladungen) bekommen so nie die Attribute der anderen. Findet sie keine eindeutige Methode, scheitert der Aufruf mit einer `InvalidOperationException`, die die Function nennt, statt ohne Anforderungen durchzulassen. Der Build meldet gleichnamige Functions schon vorher (SEEDAUTH004).
 
 ## Regeln im Build (Analyzer)
 
@@ -127,6 +128,12 @@ Abhilfe: das passende Attribut aus der Tabelle oben setzen. Im Zweifel `[Require
 Abhilfe: `[AllowAnonymous]` an die Methode setzen, die es braucht, oder die anonyme Function in eine eigene Klasse legen.
 
 MCP-Werkzeuge betrifft die Regel nicht: Bfs.Seed.Mcp wertet `[AllowAnonymous]` an Werkzeugen nicht aus, deren Capabilities gelten weiter.
+
+### SEEDAUTH004
+
+**Mehrere Functions mit demselben Methodennamen** (Kategorie Security). Zwei oder mehr Methoden einer Klasse tragen `[Function]` und heißen gleich, etwa überladene `Run`-Methoden für einen HTTP- und einen Queue-Trigger. Der Entry Point einer Function nennt nur Klasse und Methode, für alle diese Functions also denselben. Bfs.Seed.Auth ordnet die Attribute über den Namen in `[Function]` zu; ältere Versionen und andere Werkzeuge, die über den Entry Point gehen, verwechseln die Functions und wenden die Berechtigungsangaben der einen auf die andere an. Die Regel gilt für alle Trigger.
+
+Abhilfe: jeder Function eine Methode mit eigenem Namen geben.
 
 ### SEEDSUPPRESS001
 

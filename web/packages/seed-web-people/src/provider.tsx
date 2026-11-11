@@ -1,7 +1,8 @@
 import { createContext, useContext, useMemo, type ReactNode } from 'react';
 import type { SeedAuth, SeedAuthConfig, SeedLocalAuthConfig } from '@blackforestsentinel/seed-web-auth';
+import { defaultStorage, removeStored } from './cache.js';
 import { createEmptyDirectory, createLocalDirectory, type Directory } from './directory.js';
-import { createGraphDirectory } from './graph-directory.js';
+import { createGraphDirectory, PEOPLE_CACHE_PREFIX } from './graph-directory.js';
 
 /** Was die Komponenten von der Anmeldung brauchen; passt zu SeedAuth aus seed-web-auth. */
 export type DirectoryAuth = Pick<SeedAuth, 'account' | 'getAccessToken' | 'login' | 'logout'>;
@@ -31,11 +32,44 @@ export interface DirectoryProviderProps {
  * SeedUserProvider (seed-web-auth/react), damit Name und Rollen aus /api/me ankommen.
  */
 export function DirectoryProvider({ config, auth = null, directory, fetch, children }: DirectoryProviderProps) {
-  const value = useMemo(
-    () => ({ directory: directory ?? createDirectory(config, auth, { fetch }), auth }),
-    [config, auth, directory, fetch],
-  );
+  const value = useMemo(() => {
+    const current = directory ?? createDirectory(config, auth, { fetch });
+    if (auth) {
+      clearOnLogout(auth, current);
+    }
+    return { directory: current, auth };
+  }, [config, auth, directory, fetch]);
   return <DirectoryContext.Provider value={value}>{children}</DirectoryContext.Provider>;
+}
+
+/** Je Anmeldung das zuletzt gebaute Verzeichnis, dessen Zwischenspeicher logout() leert. */
+const logoutTargets = new WeakMap<DirectoryAuth, { directory: Directory }>();
+
+/**
+ * Leert beim Abmelden die Zwischenspeicher, auch wenn die App auth.logout() direkt aufruft statt über
+ * useSignOut() oder die Komponenten: logout() der Anmeldung wird dafür einmal umhüllt. Weg sind dann
+ * auch Einträge früherer Konten im sessionStorage, damit nach dem Abmelden keine Profile und Fotos im
+ * Tab bleiben.
+ */
+function clearOnLogout(auth: DirectoryAuth, directory: Directory) {
+  const known = logoutTargets.get(auth);
+  if (known) {
+    known.directory = directory;
+    return;
+  }
+  const target = { directory };
+  const logout = auth.logout;
+  try {
+    (auth as { logout: DirectoryAuth['logout'] }).logout = () => {
+      target.directory.clear();
+      removeStored(defaultStorage(), PEOPLE_CACHE_PREFIX);
+      return logout.call(auth);
+    };
+  } catch {
+    // Eingefrorenes Objekt: Dann leeren nur useSignOut() und die Komponenten.
+    return;
+  }
+  logoutTargets.set(auth, target);
 }
 
 /**
@@ -57,12 +91,14 @@ export function createDirectory(
   if (!directory || !auth || !Array.isArray(directory.scopes) || directory.scopes.length === 0) {
     return empty;
   }
-  return createGraphDirectory({
+  const graph = createGraphDirectory({
     config: directory,
     getAccessToken: (scopes) => auth.getAccessToken(scopes),
     cacheKey: auth.account?.homeAccountId,
     fetch: options.fetch,
   });
+  clearOnLogout(auth, graph);
+  return graph;
 }
 
 /** Das Verzeichnis aus DirectoryProvider; ohne Provider eines ohne Daten. */

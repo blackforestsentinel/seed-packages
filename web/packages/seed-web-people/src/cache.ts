@@ -97,20 +97,24 @@ export class TtlCache {
   }
 
   private removeWhere(predicate: (text: string) => boolean) {
-    try {
-      const storage = this.storage;
-      if (!storage) {
-        return;
-      }
-      for (let i = storage.length - 1; i >= 0; i--) {
-        const key = storage.key(i);
-        if (key?.startsWith(this.prefix) && predicate(storage.getItem(key) ?? '')) {
-          storage.removeItem(key);
-        }
-      }
-    } catch {
-      // gesperrter Speicher
+    removeStored(this.storage, this.prefix, predicate);
+  }
+}
+
+/** Entfernt alle Einträge mit diesem Präfix, auf die predicate zutrifft (Default: alle). */
+export function removeStored(storage: Storage | null, prefix: string, predicate: (text: string) => boolean = () => true) {
+  try {
+    if (!storage) {
+      return;
     }
+    for (let i = storage.length - 1; i >= 0; i--) {
+      const key = storage.key(i);
+      if (key?.startsWith(prefix) && predicate(storage.getItem(key) ?? '')) {
+        storage.removeItem(key);
+      }
+    }
+  } catch {
+    // gesperrter Speicher
   }
 }
 

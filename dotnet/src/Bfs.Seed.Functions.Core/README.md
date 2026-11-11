@@ -58,7 +58,7 @@ Die Plattform löst Referenzen auf, wenn sich App-Settings ändern, bei jedem De
 }
 ```
 
-`state` ist `placeholder` oder `unresolved`. Ohne Funde bleibt `status` `ok` und `secrets` leer.
+`state` ist `placeholder` oder `unresolved`. Ohne Funde bleibt `status` `ok` und `secrets` leer. `secret` nennt den Namen aus Platzhalter oder Referenz. Aus einem Platzhalter zählt er nur, wenn er den Regeln für Secret-Namen folgt (Kleinbuchstaben, Ziffern, Bindestriche); sonst ist `secret` `null`, und Antwort und Log zeigen keinen Text aus dem Wert.
 
 **Lokal:** Werte für `Secrets__StripeKey` usw. in `local.settings.json` eintragen (nicht eingecheckt).
 

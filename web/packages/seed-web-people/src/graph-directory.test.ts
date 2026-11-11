@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createLocalDirectory, DirectoryError } from './directory.js';
 import { createGraphClient } from './graph-client.js';
 import { createGraphDirectory, toPresence, type GraphDirectoryOptions } from './graph-directory.js';
-import { createFakeGraph, directoryConfig, memoryStorage, people, photoDataUrl, principals, type FakeGraph } from './test/fake-graph.js';
+import { createFakeGraph, directoryConfig, memoryStorage, people, photoBytes, photoDataUrl, principals, type FakeGraph } from './test/fake-graph.js';
 import { avatarColor, AVATAR_COLORS, initials } from './utils.js';
 
 function directory(graph: FakeGraph, options: Partial<GraphDirectoryOptions> = {}) {
@@ -141,6 +141,23 @@ describe('createGraphDirectory', () => {
     await dir.getPhoto(people.max.id, 48);
     expect(dir.peekPhoto(people.max.id, 48)).toBeNull();
     expect(graph.calls).toHaveLength(2);
+  });
+
+  it.each(['image/svg+xml', 'text/html', 'application/octet-stream', 'image/jpeg-x'])('zeigt bei Inhaltstyp %s kein Foto', async (type) => {
+    const graph = createFakeGraph();
+    graph.use((call) => (call.path.includes('/photos/') ? { status: 200, bytes: photoBytes, headers: { 'Content-Type': type } } : undefined));
+    const dir = directory(graph);
+
+    await expect(dir.getPhoto(people.erika.id, 48)).resolves.toBeNull();
+    expect(dir.peekPhoto(people.erika.id, 48)).toBeNull();
+  });
+
+  it('nimmt PNG mit Parametern im Inhaltstyp an', async () => {
+    const graph = createFakeGraph();
+    graph.use((call) => (call.path.includes('/photos/') ? { status: 200, bytes: photoBytes, headers: { 'Content-Type': 'Image/PNG; charset=binary' } } : undefined));
+    const dir = directory(graph);
+
+    await expect(dir.getPhoto(people.erika.id, 48)).resolves.toBe(photoDataUrl.replace('image/jpeg', 'image/png'));
   });
 
   it('übernimmt den Cache aus dem sessionStorage und lädt nach Ablauf neu', async () => {

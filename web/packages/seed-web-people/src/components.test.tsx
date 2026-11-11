@@ -39,7 +39,7 @@ afterEach(() => {
 
 const graphConfig: SeedAuthConfig = {
   clientId: 'spa-id',
-  tenantId: 'tenant-id',
+  tenantId: '0f1e2d3c-4b5a-4968-8776-a5b4c3d2e1f0',
   apiScope: 'api://api-id/access_as_user',
   directory: directoryConfig,
 };
@@ -545,11 +545,12 @@ describe('CurrentUserMenu', () => {
   });
 
   it('läuft mit der Anmeldung für Browser-Erweiterungen (seed-web-auth/extension)', async () => {
-    // Angemeldet war die Person schon: Konto in chrome.storage.local, Graph-Token in der Sitzung.
+    // Angemeldet war die Person schon: Konto und Graph-Token in der Sitzung (chrome.storage.session).
     const scopeKey = [...directoryConfig.scopes].sort().join(' ');
     const areas = {
-      local: new Map<string, unknown>([['seed-auth.spa-id.account', { ...fakeAuth().account, homeAccountId: 'home-ext' }]]),
+      local: new Map<string, unknown>([['seed-auth.spa-id.signedIn', true]]),
       session: new Map<string, unknown>([
+        ['seed-auth.spa-id.account', { ...fakeAuth().account, homeAccountId: 'home-ext' }],
         ['seed-auth.spa-id.tokens', { refreshToken: 'rt', accessTokens: { [scopeKey]: { token: 'graph-token', expiresOn: Date.now() + 3_600_000 } } }],
       ]),
     };

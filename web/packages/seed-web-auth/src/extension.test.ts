@@ -10,10 +10,10 @@ import {
   type SeedWebAuthFlowDetails,
 } from './extension.js';
 
-const config = { clientId: 'spa-id', tenantId: 'tenant-id', apiScope: 'api://api-id/access_as_user', redirectBridgePath: '/redirect.html' };
+const config = { clientId: 'spa-id', tenantId: '0f1e2d3c-4b5a-4968-8776-a5b4c3d2e1f0', apiScope: 'api://api-id/access_as_user', redirectBridgePath: '/redirect.html' };
 const redirectUri = 'https://abcdefghijklmnopabcdefghijklmnop.chromiumapp.org/';
 const graphScopes = ['https://graph.microsoft.com/User.Read', 'https://graph.microsoft.com/User.ReadBasic.All'];
-const person = { oid: 'oid-1', tid: 'tenant-id', name: 'Erika Muster', preferred_username: 'erika@example.org' };
+const person = { oid: 'oid-1', tid: '0f1e2d3c-4b5a-4968-8776-a5b4c3d2e1f0', name: 'Erika Muster', preferred_username: 'erika@example.org' };
 const accountKey = 'seed-auth.spa-id.account';
 const tokensKey = 'seed-auth.spa-id.tokens';
 const blockedKey = 'seed-auth.spa-id.blocked';
@@ -138,7 +138,7 @@ function setup() {
   });
 
   const fetchFn = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-    expect(String(input)).toBe('https://login.microsoftonline.com/tenant-id/oauth2/v2.0/token');
+    expect(String(input)).toBe('https://login.microsoftonline.com/0f1e2d3c-4b5a-4968-8776-a5b4c3d2e1f0/oauth2/v2.0/token');
     if (entra.offline) {
       throw new TypeError('Failed to fetch');
     }
@@ -224,7 +224,7 @@ describe('createSeedExtensionAuth', () => {
     const [details] = flows(t.launchWebAuthFlow);
     expect(details?.interactive).toBe(true);
     const params = new URL(details!.url).searchParams;
-    expect(`${new URL(details!.url).origin}${new URL(details!.url).pathname}`).toBe('https://login.microsoftonline.com/tenant-id/oauth2/v2.0/authorize');
+    expect(`${new URL(details!.url).origin}${new URL(details!.url).pathname}`).toBe('https://login.microsoftonline.com/0f1e2d3c-4b5a-4968-8776-a5b4c3d2e1f0/oauth2/v2.0/authorize');
     expect(params.get('client_id')).toBe('spa-id');
     expect(params.get('response_type')).toBe('code');
     expect(params.get('redirect_uri')).toBe(redirectUri);
@@ -235,9 +235,9 @@ describe('createSeedExtensionAuth', () => {
     expect(params.get('scope')?.split(' ')).toEqual([config.apiScope, 'openid', 'profile', 'offline_access']);
 
     expect(auth.account).toMatchObject({
-      homeAccountId: 'oid-1.tenant-id',
+      homeAccountId: 'oid-1.0f1e2d3c-4b5a-4968-8776-a5b4c3d2e1f0',
       localAccountId: 'oid-1',
-      tenantId: 'tenant-id',
+      tenantId: '0f1e2d3c-4b5a-4968-8776-a5b4c3d2e1f0',
       username: 'erika@example.org',
       name: 'Erika Muster',
       idTokenClaims: { oid: 'oid-1' },
@@ -336,12 +336,12 @@ describe('createSeedExtensionAuth', () => {
     const t = setup();
     const auth = await t.tab();
     await auth.login();
-    const forged = { homeAccountId: 'oid-2.tenant-id', username: 'mallory@example.org', localAccountId: 'oid-2', tenantId: 'tenant-id', environment: 'login.microsoftonline.com' };
+    const forged = { homeAccountId: 'oid-2.0f1e2d3c-4b5a-4968-8776-a5b4c3d2e1f0', username: 'mallory@example.org', localAccountId: 'oid-2', tenantId: '0f1e2d3c-4b5a-4968-8776-a5b4c3d2e1f0', environment: 'login.microsoftonline.com' };
 
     // Etwa ein Content Script, das local beschreibt, oder ein Konto ohne die Tokens seines ID-Tokens.
     await t.storage.local.set({ [accountKey]: forged });
     await t.storage.session.set({ [accountKey]: forged });
-    await t.storage.session.set({ [accountKey]: forged, [tokensKey]: { accessTokens: {}, homeAccountId: 'oid-1.tenant-id' } });
+    await t.storage.session.set({ [accountKey]: forged, [tokensKey]: { accessTokens: {}, homeAccountId: 'oid-1.0f1e2d3c-4b5a-4968-8776-a5b4c3d2e1f0' } });
 
     expect(auth.account?.username).toBe('erika@example.org');
     t.entra.refreshTokens.clear();
@@ -352,7 +352,7 @@ describe('createSeedExtensionAuth', () => {
 
   it('löscht ein Konto aus chrome.storage.local (ältere Version) beim Start und meldet still an', async () => {
     const t = setup();
-    t.local.set(accountKey, { homeAccountId: 'oid-1.tenant-id', username: 'erika@example.org' });
+    t.local.set(accountKey, { homeAccountId: 'oid-1.0f1e2d3c-4b5a-4968-8776-a5b4c3d2e1f0', username: 'erika@example.org' });
 
     const tab = await t.tab();
 
@@ -401,7 +401,7 @@ describe('createSeedExtensionAuth', () => {
 
   it('wertet einen Serverfehler des Token-Endpunkts nicht als abgelaufene Sitzung', async () => {
     const t = setup();
-    t.session.set(accountKey, { homeAccountId: 'oid-1.tenant-id', username: 'erika@example.org' });
+    t.session.set(accountKey, { homeAccountId: 'oid-1.0f1e2d3c-4b5a-4968-8776-a5b4c3d2e1f0', username: 'erika@example.org' });
     t.session.set(tokensKey, { refreshToken: 'rt-x', accessTokens: {} });
     const auth = await t.tab({
       fetch: async () => new Response('<html>Service Unavailable</html>', { status: 503 }),
@@ -560,6 +560,10 @@ describe('createSeedExtensionAuth', () => {
     t.launchWebAuthFlow.mockResolvedValueOnce(undefined);
 
     await expect(auth.getAccessToken()).rejects.toBeInstanceOf(SeedAuthInteractionRequiredError);
+  });
+
+  it('lehnt eine tenantId ab, die keine GUID ist', async () => {
+    await expect(createSeedExtensionAuth({ ...config, tenantId: 'organizations' })).rejects.toThrow(/keine Tenant-ID \(GUID\)/);
   });
 
   it('meldet fehlende Berechtigungen identity und storage verständlich', async () => {

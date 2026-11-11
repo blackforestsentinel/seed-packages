@@ -18,6 +18,7 @@ if (isSeedAuthConfig(config.auth)) {
 - `getAccessToken()` holt Tokens still und leitet nur um, wenn Entra ID eine Interaktion verlangt. Dann wirft es `SeedAuthRedirectError`.
 - `getAccessToken(scopes)` holt ein Token für genau diese Berechtigungen, etwa für Microsoft Graph (unten).
 - Redirect-Ziel ist der Origin der Seite mit abschließendem Schrägstrich (`https://app.example.org/`). Das Terraform-Modul `sso` trägt genau diese Form für die Static Web App und in `dev` für `http://localhost:5173/` ein.
+- `tenantId` muss eine GUID sein, wie sie das Modul `sso` schreibt. Mit `common`, `organizations` oder einem Domänennamen werfen `createSeedAuth()` und `createSeedExtensionAuth()` einen Fehler, statt Konten anderer Tenants anzunehmen. Der lokale Modus (`"mode": "local"`) hat keine `tenantId` und ist nicht betroffen.
 - Browser-Erweiterungen nutzen statt `createSeedAuth()` den Einstieg `/extension` mit demselben Interface (unten, „Browser-Erweiterungen“).
 
 ## Stille Sitzungserneuerung

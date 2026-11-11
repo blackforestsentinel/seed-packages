@@ -11,7 +11,7 @@ import {
 } from '@azure/msal-browser';
 import { createSeedAuth, isSeedAuthConfig, isSeedLocalAuthConfig, SeedAuthRedirectError, SeedAuthScopeError } from './index.js';
 
-const config = { clientId: 'spa-id', tenantId: 'tenant-id', apiScope: 'api://api-id/access_as_user' };
+const config = { clientId: 'spa-id', tenantId: '0f1e2d3c-4b5a-4968-8776-a5b4c3d2e1f0', apiScope: 'api://api-id/access_as_user' };
 const bridged = { ...config, redirectBridgePath: '/redirect.html' };
 const options = { redirectUri: 'https://app.example.org/', redirectBridgeUri: 'https://app.example.org/redirect.html' };
 const account = { homeAccountId: 'home', username: 'erika@example.org', name: 'Erika Muster' } as AccountInfo;
@@ -321,6 +321,20 @@ describe('getAccessToken mit Scopes', () => {
     const next = await createSeedAuth(config, { client: msal, redirectUri: options.redirectUri });
     await expect(next.getAccessToken(graphScopes)).resolves.toBe('token');
     expect(sessionStorage.getItem(graphKey)).toBeNull();
+  });
+});
+
+describe('tenantId', () => {
+  it.each(['common', 'organizations', 'consumers', 'example.org', '', 'TENANT'])('lehnt „%s“ als tenantId ab', async (tenantId) => {
+    const { msal } = fakeClient();
+
+    await expect(createSeedAuth({ ...config, tenantId }, { client: msal, redirectUri: options.redirectUri })).rejects.toThrow(/keine Tenant-ID \(GUID\)/);
+  });
+
+  it('nimmt eine GUID in beliebiger Schreibweise an', async () => {
+    const { msal } = fakeClient();
+
+    await expect(createSeedAuth({ ...config, tenantId: config.tenantId.toUpperCase() }, { client: msal, redirectUri: options.redirectUri })).resolves.toBeDefined();
   });
 });
 

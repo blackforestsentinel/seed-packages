@@ -9,7 +9,7 @@
 
 import type { AccountInfo } from '@azure/msal-browser';
 
-import type { SeedAuthConfig } from './config.js';
+import { assertTenantId, type SeedAuthConfig } from './config.js';
 import { SeedAuthInteractionRequiredError, SeedAuthScopeError } from './errors.js';
 import type { SeedAuth } from './index.js';
 
@@ -156,6 +156,7 @@ class EntraError extends Error {
  * einem Klick auf. redirectBridgePath aus der Konfiguration gilt hier nicht.
  */
 export async function createSeedExtensionAuth(config: SeedAuthConfig, options: SeedExtensionAuthOptions = {}): Promise<SeedAuth> {
+  assertTenantId(config);
   const browser = options.browser ?? (globalThis as { chrome?: SeedExtensionBrowserApi }).chrome;
   if (!browser?.identity || !browser.storage) {
     throw new Error('seed-web-auth/extension: chrome.identity und chrome.storage fehlen. Braucht die Erweiterung die Berechtigungen identity und storage?');

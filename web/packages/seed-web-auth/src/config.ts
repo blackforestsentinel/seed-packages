@@ -4,6 +4,7 @@ import type { SeedDirectoryConfig, SeedLocalDirectoryConfig } from './directory.
 export interface SeedAuthConfig {
   /** Client-ID der SPA-App-Registrierung. */
   clientId: string;
+  /** Tenant-ID (GUID). common, organizations oder ein Domänenname gelten nicht. */
   tenantId: string;
   /** Delegierte Berechtigung der API, z. B. api://<client-id>/access_as_user. */
   apiScope: string;
@@ -31,6 +32,19 @@ export function isSeedAuthConfig(value: unknown): value is SeedAuthConfig {
     typeof config.tenantId === 'string' && config.tenantId !== '' &&
     typeof config.apiScope === 'string' && config.apiScope !== ''
   );
+}
+
+const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Wirft, wenn tenantId keine GUID ist. Mit common oder organizations nähme die Anmeldung Konten
+ * jedes Tenants an; die API lehnte deren Tokens zwar ab, das Frontend liefe aber mit einer fremden
+ * Sitzung gegen Graph. Der lokale Modus hat keine tenantId und kommt hier nicht vorbei.
+ */
+export function assertTenantId(config: Pick<SeedAuthConfig, 'tenantId'>): void {
+  if (typeof config.tenantId !== 'string' || !GUID.test(config.tenantId)) {
+    throw new Error(`seed-web-auth: tenantId „${String(config.tenantId)}“ ist keine Tenant-ID (GUID). Steht in config.json die Ausgabe des Terraform-Moduls sso?`);
+  }
 }
 
 /** Prüft, ob config.json den lokalen Modus verlangt (auth.mode: "local"). */

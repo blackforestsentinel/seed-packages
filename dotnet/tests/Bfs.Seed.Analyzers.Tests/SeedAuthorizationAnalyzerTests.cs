@@ -370,11 +370,71 @@ public class SeedAuthorizationAnalyzerTests
     }
 
     [Fact]
+    public async Task Functions_WithSameMethodName_AreErrors()
+    {
+        // Beide Functions haben den Entry Point OrderFunctions.Run, gleich welcher Trigger.
+        var diagnostics = await RunAsync("""
+            public sealed class OrderFunctions
+            {
+                [Function("DeleteOrder")]
+                [RequireCapability("orders.delete")]
+                public IActionResult Run([HttpTrigger(AuthorizationLevel.Anonymous, "delete")] HttpRequest request) => new OkResult();
+
+                [Function("ProcessOrder")]
+                public void Run([Trigger] string message) { }
+
+                [Function("GetOrder")]
+                [RequireCapability("orders.read")]
+                public IActionResult Get([HttpTrigger(AuthorizationLevel.Anonymous, "get")] HttpRequest request) => new OkResult();
+            }
+
+            [System.AttributeUsage(System.AttributeTargets.Parameter)]
+            public sealed class TriggerAttribute : System.Attribute;
+            """);
+
+        Assert.Equal(2, diagnostics.Count);
+        Assert.All(diagnostics, d =>
+        {
+            Assert.Equal("SEEDAUTH004", d.Id);
+            Assert.Equal(DiagnosticSeverity.Error, d.Severity);
+            Assert.Equal(
+                "Die Functions 'DeleteOrder', 'ProcessOrder' in 'OrderFunctions' teilen sich den Methodennamen 'Run'. Gib jeder Function eine Methode mit eigenem Namen.",
+                d.GetMessage());
+            Assert.Equal("Run", d.Location.SourceTree!.GetText(TestContext.Current.CancellationToken).ToString(d.Location.SourceSpan));
+        });
+    }
+
+    [Fact]
+    public async Task Functions_WithSameMethodNameInDifferentClasses_AreFine()
+    {
+        var diagnostics = await RunAsync("""
+            public sealed class OrderFunctions
+            {
+                [Function("GetOrder")]
+                [RequireCapability("orders.read")]
+                public IActionResult Run([HttpTrigger(AuthorizationLevel.Anonymous, "get")] HttpRequest request) => new OkResult();
+
+                // Eine Überladung ohne [Function] ist keine zweite Function.
+                public IActionResult Run(string id) => new OkResult();
+            }
+
+            public sealed class InvoiceFunctions
+            {
+                [Function("GetInvoice")]
+                [RequireCapability("invoices.read")]
+                public IActionResult Run([HttpTrigger(AuthorizationLevel.Anonymous, "get")] HttpRequest request) => new OkResult();
+            }
+            """);
+
+        Assert.Empty(diagnostics);
+    }
+
+    [Fact]
     public void Rules_AreErrorsAndCannotBeConfiguredAway()
     {
         var analyzer = new SeedAuthorizationAnalyzer();
 
-        Assert.Equal(["SEEDAUTH001", "SEEDAUTH002", "SEEDAUTH003"], analyzer.SupportedDiagnostics.Select(d => d.Id));
+        Assert.Equal(["SEEDAUTH001", "SEEDAUTH002", "SEEDAUTH003", "SEEDAUTH004"], analyzer.SupportedDiagnostics.Select(d => d.Id));
         Assert.All(analyzer.SupportedDiagnostics, d =>
         {
             Assert.Equal(DiagnosticSeverity.Error, d.DefaultSeverity);

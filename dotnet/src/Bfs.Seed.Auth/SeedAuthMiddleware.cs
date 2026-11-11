@@ -24,7 +24,7 @@ internal sealed class SeedAuthMiddleware(
     IEnumerable<ISeedAuthChallengeScope>? challengeScopes = null)
     : IFunctionsWorkerMiddleware
 {
-    private static readonly ConcurrentDictionary<string, FunctionRequirements> Requirements = new();
+    private static readonly ConcurrentDictionary<(string EntryPoint, string Name), FunctionRequirements> Requirements = new();
 
     private readonly Lazy<ClaimsPrincipal> localPrincipal = new(() => SeedLocalPrincipal.Create(options.Value, capabilities));
 
@@ -36,7 +36,8 @@ internal sealed class SeedAuthMiddleware(
             return;
         }
 
-        var requirements = Requirements.GetOrAdd(context.FunctionDefinition.EntryPoint, Inspect);
+        var definition = context.FunctionDefinition;
+        var requirements = Requirements.GetOrAdd((definition.EntryPoint, definition.Name), key => Inspect(key.EntryPoint, key.Name));
         if (requirements.AllowAnonymous)
         {
             await next(context);
@@ -122,23 +123,37 @@ internal sealed class SeedAuthMiddleware(
     private static bool IsHttpTrigger(FunctionContext context) =>
         context.FunctionDefinition.InputBindings.Values.Any(b => string.Equals(b.Type, "httpTrigger", StringComparison.OrdinalIgnoreCase));
 
-    internal static bool AllowsAnonymous(string entryPoint) => Inspect(entryPoint).AllowAnonymous;
+    internal static bool AllowsAnonymous(string entryPoint, string functionName) => Inspect(entryPoint, functionName).AllowAnonymous;
 
-    /// <summary>Liest die Attribute an Methode und Klasse; die Methode geht bei Scopes vor.</summary>
-    internal static FunctionRequirements Inspect(string entryPoint)
+    /// <summary>
+    /// Liest die Attribute an Methode und Klasse; die Methode geht bei Scopes vor. Die Methode ist die
+    /// mit <c>[Function]</c> unter dem Namen der Function: Der Entry Point nennt nur den Methodennamen,
+    /// und den können zwei Functions einer Klasse teilen.
+    /// </summary>
+    internal static FunctionRequirements Inspect(string entryPoint, string functionName)
     {
         var separator = entryPoint.LastIndexOf('.');
-        var typeName = entryPoint[..separator];
+        var typeName = separator > 0 ? entryPoint[..separator] : entryPoint;
         var methodName = entryPoint[(separator + 1)..];
 
         var type = AppDomain.CurrentDomain.GetAssemblies()
             .Select(a => a.GetType(typeName, throwOnError: false))
             .FirstOrDefault(t => t is not null);
-        var method = type?.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static)
-            .FirstOrDefault(m => m.Name == methodName);
+        var methods = type?.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static)
+            .Where(m => m.Name == methodName && m.GetCustomAttribute<FunctionAttribute>()?.Name == functionName)
+            .ToList() ?? [];
 
-        var attributes = (method?.GetCustomAttributes(inherit: true) ?? [])
-            .Concat(type?.GetCustomAttributes(inherit: true) ?? [])
+        // Ohne eindeutige Methode keine Anforderungen raten: leere Anforderungen ließen jedes gültige Token durch.
+        if (methods.Count != 1)
+        {
+            throw new InvalidOperationException(
+                $"UseSeedAuth(): Für die Function {functionName} ({entryPoint}) gibt es {(methods.Count == 0 ? "keine" : "mehr als eine")} " +
+                $"öffentliche Methode {methodName} mit [Function(\"{functionName}\")]. Die Anforderungen der Function lassen sich nicht bestimmen.");
+        }
+
+        var method = methods[0];
+        var attributes = method.GetCustomAttributes(inherit: true)
+            .Concat(type!.GetCustomAttributes(inherit: true))
             .ToList();
 
         // [AllowWithoutRole] ändert nichts: Ohne Rolle durchzulassen ist das Verhalten ohne Attribut.

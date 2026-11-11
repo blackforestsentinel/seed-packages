@@ -65,6 +65,19 @@ public static class SeedDiagnostics
         helpLinkUri: Help + "seedauth003",
         customTags: WellKnownDiagnosticTags.NotConfigurable);
 
+    /// <summary>SEEDAUTH004: Mehrere Functions einer Klasse mit demselben Methodennamen.</summary>
+    public static readonly DiagnosticDescriptor FunctionsShareMethodName = new(
+        id: "SEEDAUTH004",
+        title: "Mehrere Functions mit demselben Methodennamen",
+        messageFormat: "Die Functions {0} in '{1}' teilen sich den Methodennamen '{2}'. Gib jeder Function eine Methode mit eigenem Namen.",
+        category: SecurityCategory,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "Der Entry Point einer Function nennt nur Klasse und Methode, für überladene Methoden also für alle denselben. " +
+            "Was Functions über den Entry Point zuordnet, etwa ältere Versionen von Bfs.Seed.Auth, verwechselt sie und wendet die Berechtigungsangaben der einen auf die andere an.",
+        helpLinkUri: Help + "seedauth004",
+        customTags: WellKnownDiagnosticTags.NotConfigurable);
+
     /// <summary>SEEDSUPPRESS001: [SuppressMessage] oder [UnconditionalSuppressMessage] ohne ausreichende Begründung.</summary>
     public static readonly DiagnosticDescriptor SuppressionWithoutJustification = new(
         id: "SEEDSUPPRESS001",

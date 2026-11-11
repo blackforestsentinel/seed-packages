@@ -94,6 +94,7 @@ Ohne Attribut nimmt die Middleware jedes gültige Token an, auch von einem Konto
 - **`[AllowAnonymous]`** nimmt die Function ganz von der Token-Prüfung aus. Auch ein mitgeschicktes Token prüft die API dann nicht; `HttpContext.User` bleibt leer. Steht daneben an Methode oder Klasse ein anderes Attribut aus der Tabelle oder `[RequireScope]`, wirkt es nicht; der Build bricht mit SEEDAUTH003 ab.
 - `[RequireScope]` legt nur fest, mit welcher delegierten Berechtigung eine Anwendung im Namen der Person aufruft, nicht, wer die Person sein darf. Es ersetzt keines der Attribute oben.
 - Mit `auth.assignmentRequired: true` bekommt nur ein Token, wer einer Rolle zugewiesen ist, direkt oder über eine Gruppe. Dann wirken `[RequireAnyRole]` und `[AllowWithoutRole]` praktisch gleich.
+- Die Middleware liest die Attribute der Methode, deren `[Function]` den Namen der aufgerufenen Function trägt, nicht nur der Methode mit dem Namen aus dem Entry Point. Gleichnamige Methoden einer Klasse (Überladungen) bekommen so nie die Attribute der anderen. Findet sie keine eindeutige Methode, scheitert der Aufruf mit einer `InvalidOperationException`, die die Function nennt, statt ohne Anforderungen durchzulassen. Der Build meldet gleichnamige Functions schon vorher (SEEDAUTH004).
 
 ## Regeln im Build (Analyzer)
 
@@ -127,6 +128,12 @@ Abhilfe: das passende Attribut aus der Tabelle oben setzen. Im Zweifel `[Require
 Abhilfe: `[AllowAnonymous]` an die Methode setzen, die es braucht, oder die anonyme Function in eine eigene Klasse legen.
 
 MCP-Werkzeuge betrifft die Regel nicht: Bfs.Seed.Mcp wertet `[AllowAnonymous]` an Werkzeugen nicht aus, deren Capabilities gelten weiter.
+
+### SEEDAUTH004
+
+**Mehrere Functions mit demselben Methodennamen** (Kategorie Security). Zwei oder mehr Methoden einer Klasse tragen `[Function]` und heißen gleich, etwa überladene `Run`-Methoden für einen HTTP- und einen Queue-Trigger. Der Entry Point einer Function nennt nur Klasse und Methode, für alle diese Functions also denselben. Bfs.Seed.Auth ordnet die Attribute über den Namen in `[Function]` zu; ältere Versionen und andere Werkzeuge, die über den Entry Point gehen, verwechseln die Functions und wenden die Berechtigungsangaben der einen auf die andere an. Die Regel gilt für alle Trigger.
+
+Abhilfe: jeder Function eine Methode mit eigenem Namen geben.
 
 ### SEEDSUPPRESS001
 

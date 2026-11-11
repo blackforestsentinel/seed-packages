@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.Azure.Functions.Worker;
 using Microsoft.IdentityModel.Tokens;
 
 namespace Bfs.Seed.Auth.Tests;
@@ -225,9 +226,9 @@ public class SeedTokenValidatorTests
     [Fact]
     public void AllowAnonymous_IsDetectedOnMethodAndClass()
     {
-        Assert.True(SeedAuthMiddleware.AllowsAnonymous($"{typeof(SampleFunctions).FullName}.{nameof(SampleFunctions.Health)}"));
-        Assert.False(SeedAuthMiddleware.AllowsAnonymous($"{typeof(SampleFunctions).FullName}.{nameof(SampleFunctions.Me)}"));
-        Assert.True(SeedAuthMiddleware.AllowsAnonymous($"{typeof(PublicFunctions).FullName}.{nameof(PublicFunctions.Info)}"));
+        Assert.True(SeedAuthMiddleware.AllowsAnonymous($"{typeof(SampleFunctions).FullName}.{nameof(SampleFunctions.Health)}", "SampleHealth"));
+        Assert.False(SeedAuthMiddleware.AllowsAnonymous($"{typeof(SampleFunctions).FullName}.{nameof(SampleFunctions.Me)}", "SampleMe"));
+        Assert.True(SeedAuthMiddleware.AllowsAnonymous($"{typeof(PublicFunctions).FullName}.{nameof(PublicFunctions.Info)}", "PublicInfo"));
     }
 
     /// <summary>Eine Anwendung, die nicht die SPA ist, etwa ein fremder Client oder ein Dienst.</summary>
@@ -253,15 +254,18 @@ public class SeedTokenValidatorTests
 
     public sealed class SampleFunctions
     {
+        [Function("SampleHealth")]
         [AllowAnonymous]
         public string Health() => "ok";
 
+        [Function("SampleMe")]
         public string Me() => "me";
     }
 
     [AllowAnonymous]
     public sealed class PublicFunctions
     {
+        [Function("PublicInfo")]
         public string Info() => "info";
     }
 }

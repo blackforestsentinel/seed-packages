@@ -8,7 +8,8 @@ namespace Bfs.Seed.Analyzers;
 /// SEEDAUTH001 bis SEEDAUTH003: Jede HTTP-Function und jedes MCP-Werkzeug legt ausdrücklich fest,
 /// wer es aufrufen darf, und <c>[AllowAnonymous]</c> hebt keine andere Angabe still auf. Ohne
 /// Angabe lässt Bfs.Seed.Auth jedes gültige Token durch, auch von Konten ohne App-Rolle; das soll
-/// eine bewusste Entscheidung sein, kein Versehen.
+/// eine bewusste Entscheidung sein, kein Versehen. SEEDAUTH004: Jede Function einer Klasse hat
+/// einen eigenen Methodennamen, damit ihr Entry Point eindeutig ist.
 /// </summary>
 /// <remarks>
 /// Die Attribute zählen an Methode und Klasse, auch geerbt, wie in der Middleware von Bfs.Seed.Auth
@@ -22,7 +23,8 @@ public sealed class SeedAuthorizationAnalyzer : DiagnosticAnalyzer
     public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics { get; } = ImmutableArray.Create(
         SeedDiagnostics.FunctionWithoutAuthorization,
         SeedDiagnostics.ToolWithoutAuthorization,
-        SeedDiagnostics.AnonymousOverridesAuthorization);
+        SeedDiagnostics.AnonymousOverridesAuthorization,
+        SeedDiagnostics.FunctionsShareMethodName);
 
     /// <inheritdoc />
     public override void Initialize(AnalysisContext context)
@@ -40,7 +42,51 @@ public sealed class SeedAuthorizationAnalyzer : DiagnosticAnalyzer
             }
 
             start.RegisterSymbolAction(c => AnalyzeMethod(c, types), SymbolKind.Method);
+            start.RegisterSymbolAction(c => AnalyzeType(c, types), SymbolKind.NamedType);
         });
+    }
+
+    /// <summary>SEEDAUTH004: Functions derselben Klasse mit demselben Methodennamen, gleich welcher Trigger.</summary>
+    private static void AnalyzeType(SymbolAnalysisContext context, KnownTypes types)
+    {
+        var type = (INamedTypeSymbol)context.Symbol;
+        var functions = new Dictionary<string, List<(IMethodSymbol Method, string Name)>>(StringComparer.Ordinal);
+        foreach (var member in type.GetMembers())
+        {
+            if (member is not IMethodSymbol { MethodKind: MethodKind.Ordinary } method || method.Locations.Length == 0)
+            {
+                continue;
+            }
+
+            foreach (var attribute in method.GetAttributes())
+            {
+                if (types.Function.Is(attribute.AttributeClass))
+                {
+                    if (!functions.TryGetValue(method.Name, out var list))
+                    {
+                        functions[method.Name] = list = [];
+                    }
+
+                    list.Add((method, FunctionName(attribute, method)));
+                    break;
+                }
+            }
+        }
+
+        foreach (var group in functions)
+        {
+            if (group.Value.Count < 2)
+            {
+                continue;
+            }
+
+            var names = string.Join(", ", group.Value.Select(f => $"'{f.Name}'"));
+            foreach (var (method, _) in group.Value)
+            {
+                context.ReportDiagnostic(Diagnostic.Create(
+                    SeedDiagnostics.FunctionsShareMethodName, method.Locations[0], names, type.Name, group.Key));
+            }
+        }
     }
 
     private static void AnalyzeMethod(SymbolAnalysisContext context, KnownTypes types)

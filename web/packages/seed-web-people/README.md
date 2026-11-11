@@ -73,12 +73,12 @@ if (auth && !auth.account) {
 - ARIA-Muster „Combobox“: Pfeiltasten wählen den Vorschlag, Enter übernimmt ihn, Escape schließt die Liste und leert dann das Feld, Rücktaste im leeren Feld entfernt den letzten Chip.
 - Suche ab zwei Zeichen mit 250 ms Verzögerung. Zuerst die für die Person relevanten Kontakte (`/me/people`), dann das Verzeichnis (`/users?$search`), beides in einem `$batch`.
 - `filter` blendet Vorschläge aus, `renderOption` stellt sie selbst dar.
-- **`onlyWithAppRole`** zeigt nur Personen mit einer App-Rolle der API, mit `roles` nur mit diesen Rollen. Das Paket liest die Zuweisungen der API-Registrierung (`/servicePrincipals(appId='…')/appRoleAssignedTo`) und löst Gruppen samt verschachtelter Gruppen auf (`/groups/{id}/transitiveMembers`). Das Ergebnis bleibt zehn Minuten im Zwischenspeicher.
+- **`onlyWithAppRole`** zeigt nur Personen mit einer App-Rolle der API, mit `roles` nur mit diesen Rollen. Das Paket liest die Zuweisungen der API-Registrierung (`/servicePrincipals(appId='…')/appRoleAssignedTo`) und löst Gruppen samt verschachtelter Gruppen auf (`/groups/{id}/transitiveMembers`). Das Ergebnis bleibt zehn Minuten im Zwischenspeicher. Die Option braucht tenantweite Leserechte, siehe „Berechtigungen und Einwilligung“.
 - Ohne `auth.directory.roleFilter` zeigt der Picker mit `onlyWithAppRole` niemanden, sondern einen Fehler im Feld (`data-state="error"`) und in der Konsole. Im lokalen Modus filtert er nach `roles` der erfundenen Personen.
 
 ### Anwendungen und verwaltete Identitäten
 
-Wer einen Datensatz bearbeiten darf, ist oft nicht nur eine Person, sondern auch eine verwaltete Identität (Managed Identity) oder eine andere Anwendung. Mit `auth.directory.servicePrincipals` (in `project.yaml` `auth.directory.servicePrincipals: true`) kennen die Komponenten auch diese Service Principals:
+Wer einen Datensatz bearbeiten darf, ist oft nicht nur eine Person, sondern auch eine verwaltete Identität (Managed Identity) oder eine andere Anwendung. Mit `auth.directory.servicePrincipals` (in `project.yaml` `auth.directory.servicePrincipals: true`) kennen die Komponenten auch diese Service Principals. Die Option braucht tenantweite Leserechte, siehe „Berechtigungen und Einwilligung“.
 
 ```tsx
 <PeoplePicker
@@ -137,7 +137,7 @@ Für eigene Oberflächen gibt es nur die Daten:
 
 ## Berechtigungen und Einwilligung
 
-Alle Berechtigungen sind delegiert: Das Frontend sieht nur, was die angemeldete Person in Outlook oder Teams ohnehin sieht. Das Terraform-Modul `sso` trägt sie an der SPA-Registrierung ein; einwilligen muss ein Mensch.
+Alle Berechtigungen sind delegiert. Mit `User.Read`, `User.ReadBasic.All`, `People.Read` und `Presence.Read.All` sieht das Frontend nur, was die angemeldete Person in Outlook oder Teams ohnehin sieht. Für `roleFilter` und `servicePrincipals` gilt das nicht (unten). Das Terraform-Modul `sso` trägt die Berechtigungen an der SPA-Registrierung ein; einwilligen muss ein Mensch.
 
 | Berechtigung | Wofür | Admin-Consent nötig |
 | --- | --- | --- |
@@ -152,6 +152,8 @@ Alle Berechtigungen sind delegiert: Das Frontend sieht nur, was die angemeldete 
 - Das Paket holt ein Token für alle Scopes aus `auth.directory.scopes` zugleich. Fehlt die Einwilligung für einen davon, bleibt Graph ganz aus. Mit `roleFilter: true` oder `servicePrincipals: true` daher erst die Administratorzustimmung erteilen, dann ausrollen.
 - Fehlt die Einwilligung, leitet seed-web-auth je Tab einmal ohne und einmal mit Dialog zu Entra ID um, damit die Person zustimmen kann. Danach läuft die App ohne Graph weiter: Initialen statt Fotos, der Picker meldet einen Fehler, in der Konsole steht ein Hinweis.
 - Lehnt Graph Position und Abteilung ab (403), fragt das Paket nur Name und Mail ab.
+
+> **Tenantweite Leserechte mit `roleFilter` und `servicePrincipals`:** `roleFilter` braucht die delegierten Berechtigungen `Application.Read.All` und `GroupMember.Read.All` an der SPA-Registrierung, `servicePrincipals` `Application.Read.All`. Die SPA ist ein öffentlicher Client ohne Secret. Nach der Administratorzustimmung kann jeder, der ein Token für die SPA bekommt, Microsoft Graph damit direkt aufrufen, nicht nur über den Picker: mit `Application.Read.All` alle App-Registrierungen und Service Principals des Tenants (samt Redirect-URIs, Metadaten der Anmeldeinformationen und App-Rollen) und alle Rollenzuweisungen, mit `GroupMember.Read.All` alle Gruppenmitgliedschaften. Mit `auth.assignmentRequired: false` ist das jedes Mitglied und jeder Gast des Tenants. Auch ein Skriptfehler in der SPA könnte diese Daten lesen. Die Optionen deshalb nur zusammen mit `auth.assignmentRequired: true` einschalten, damit nur zugewiesene Personen ein Token bekommen, und die Administratorzustimmung bewusst erteilen.
 
 ## Lokaler Modus
 

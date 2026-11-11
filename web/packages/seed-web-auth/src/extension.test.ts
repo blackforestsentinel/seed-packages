@@ -17,6 +17,7 @@ const person = { oid: 'oid-1', tid: 'tenant-id', name: 'Erika Muster', preferred
 const accountKey = 'seed-auth.spa-id.account';
 const tokensKey = 'seed-auth.spa-id.tokens';
 const blockedKey = 'seed-auth.spa-id.blocked';
+const signedInKey = 'seed-auth.spa-id.signedIn';
 const oidcScopes = new Set(['openid', 'profile', 'offline_access']);
 
 type Listener = (changes: Record<string, { newValue?: unknown }>, areaName: string) => void;
@@ -185,6 +186,8 @@ function setup() {
     get session() {
       return session.data;
     },
+    /** Schreiben mit onChanged, etwa wie ein Content Script oder eine andere Seite. */
+    storage: browser.storage,
     advance(ms: number) {
       time += ms;
     },
@@ -239,9 +242,10 @@ describe('createSeedExtensionAuth', () => {
       name: 'Erika Muster',
       idTokenClaims: { oid: 'oid-1' },
     });
-    expect(t.local.get(accountKey)).toMatchObject({ username: 'erika@example.org' });
+    // Konto und Tokens nur in chrome.storage.session; in local nur der Merker ohne Angaben zur Person.
+    expect(t.session.get(accountKey)).toMatchObject({ username: 'erika@example.org' });
     expect(t.session.has(tokensKey)).toBe(true);
-    expect(t.local.has(tokensKey)).toBe(false);
+    expect(Object.fromEntries(t.local)).toEqual({ [signedInKey]: true });
 
     await expect(auth.getAccessToken()).resolves.toBe(`at-2:${config.apiScope}`);
     expect(grants(t.tokenCalls)).toEqual(['authorization_code']);
@@ -288,16 +292,75 @@ describe('createSeedExtensionAuth', () => {
     expect(params.get('domain_hint')).toBeNull();
   });
 
-  it('meldet nach einem Browser-Neustart still wieder an', async () => {
+  it('meldet nach einem Browser-Neustart still wieder an, ohne login_hint', async () => {
     const t = setup();
     await (await t.tab()).login();
     t.restart();
 
     const tab = await t.tab();
 
-    expect(tab.account?.username).toBe('erika@example.org');
+    // Das Konto lag nur in der Sitzung; der Merker in local reicht für die stille Anmeldung.
+    expect(tab.account).toBeNull();
     await expect(tab.getAccessToken()).resolves.toMatch(/^at-\d+:api:/);
-    expect(flows(t.launchWebAuthFlow).map((d) => d.interactive)).toEqual([true, false]);
+    expect(tab.account?.username).toBe('erika@example.org');
+    const [login, silent] = flows(t.launchWebAuthFlow);
+    expect([login?.interactive, silent?.interactive]).toEqual([true, false]);
+    expect(new URL(silent!.url).searchParams.get('login_hint')).toBeNull();
+    expect(t.session.get(accountKey)).toMatchObject({ username: 'erika@example.org' });
+  });
+
+  it('meldet nach Abmelden und Neustart nicht still an', async () => {
+    const t = setup();
+    const auth = await t.tab();
+    await auth.login();
+    await auth.logout();
+    t.restart();
+
+    const tab = await t.tab();
+
+    await expect(tab.getAccessToken()).rejects.toBeInstanceOf(SeedAuthInteractionRequiredError);
+    expect(t.launchWebAuthFlow).toHaveBeenCalledTimes(1);
+  });
+
+  it('übernimmt das Konto einer anderen Seite zusammen mit ihren Tokens', async () => {
+    const t = setup();
+    const b = await t.tab();
+    const a = await t.tab();
+
+    await a.login();
+
+    expect(b.account?.username).toBe('erika@example.org');
+  });
+
+  it('übernimmt kein Konto, das ohne passende Tokens in den Speicher geschrieben wird', async () => {
+    const t = setup();
+    const auth = await t.tab();
+    await auth.login();
+    const forged = { homeAccountId: 'oid-2.tenant-id', username: 'mallory@example.org', localAccountId: 'oid-2', tenantId: 'tenant-id', environment: 'login.microsoftonline.com' };
+
+    // Etwa ein Content Script, das local beschreibt, oder ein Konto ohne die Tokens seines ID-Tokens.
+    await t.storage.local.set({ [accountKey]: forged });
+    await t.storage.session.set({ [accountKey]: forged });
+    await t.storage.session.set({ [accountKey]: forged, [tokensKey]: { accessTokens: {}, homeAccountId: 'oid-1.tenant-id' } });
+
+    expect(auth.account?.username).toBe('erika@example.org');
+    t.entra.refreshTokens.clear();
+    t.advance(hours(25));
+    await expect(auth.getAccessToken()).resolves.toMatch(/^at-\d+:api:/);
+    expect(new URL(flows(t.launchWebAuthFlow)[1]!.url).searchParams.get('login_hint')).toBe('erika@example.org');
+  });
+
+  it('löscht ein Konto aus chrome.storage.local (ältere Version) beim Start und meldet still an', async () => {
+    const t = setup();
+    t.local.set(accountKey, { homeAccountId: 'oid-1.tenant-id', username: 'erika@example.org' });
+
+    const tab = await t.tab();
+
+    expect(tab.account).toBeNull();
+    expect(Object.fromEntries(t.local)).toEqual({ [signedInKey]: true });
+    await expect(tab.getAccessToken()).resolves.toMatch(/^at-\d+:api:/);
+    expect(new URL(flows(t.launchWebAuthFlow)[0]!.url).searchParams.get('login_hint')).toBeNull();
+    expect(tab.account?.username).toBe('erika@example.org');
   });
 
   it('wirft ohne Sitzung SeedAuthInteractionRequiredError und versucht es je Browser-Sitzung nur einmal still', async () => {
@@ -338,7 +401,7 @@ describe('createSeedExtensionAuth', () => {
 
   it('wertet einen Serverfehler des Token-Endpunkts nicht als abgelaufene Sitzung', async () => {
     const t = setup();
-    t.local.set(accountKey, { homeAccountId: 'oid-1.tenant-id', username: 'erika@example.org' });
+    t.session.set(accountKey, { homeAccountId: 'oid-1.tenant-id', username: 'erika@example.org' });
     t.session.set(tokensKey, { refreshToken: 'rt-x', accessTokens: {} });
     const auth = await t.tab({
       fetch: async () => new Response('<html>Service Unavailable</html>', { status: 503 }),
@@ -395,29 +458,32 @@ describe('createSeedExtensionAuth', () => {
     const tab = await t.tab({ tokenStorage: 'local' });
 
     expect(t.local.has(tokensKey)).toBe(true);
+    expect(t.local.get(accountKey)).toMatchObject({ username: 'erika@example.org' });
+    expect(tab.account?.username).toBe('erika@example.org');
     expect(t.session.has(tokensKey)).toBe(false);
     await expect(tab.getAccessToken()).resolves.toBe(`at-2:${config.apiScope}`);
     await tab.logout();
     expect(t.local.size).toBe(0);
   });
 
-  it('löscht beim Start die Tokens aus dem Bereich, den tokenStorage nicht nutzt', async () => {
+  it('löscht beim Start Tokens und Konto aus dem Bereich, den tokenStorage nicht nutzt', async () => {
     const t = setup();
     await (await t.tab({ tokenStorage: 'local' })).login();
     expect(t.local.has(tokensKey)).toBe(true);
 
-    // Zurück auf session: Das Refresh-Token bleibt nicht auf der Platte, das Konto schon.
+    // Zurück auf session: Weder Refresh-Token noch Konto bleiben auf der Platte, nur der Merker.
     const tab = await t.tab();
 
-    expect(t.local.has(tokensKey)).toBe(false);
-    expect(t.local.get(accountKey)).toMatchObject({ username: 'erika@example.org' });
+    expect(Object.fromEntries(t.local)).toEqual({ [signedInKey]: true });
     await expect(tab.getAccessToken()).resolves.toMatch(/^at-\d+:api:/);
     expect(flows(t.launchWebAuthFlow).map((d) => d.interactive)).toEqual([true, false]);
     expect(t.session.has(tokensKey)).toBe(true);
+    expect(t.session.has(accountKey)).toBe(true);
 
-    // Umgekehrt bleiben mit local keine Tokens in der Sitzung.
+    // Umgekehrt bleiben mit local weder Tokens noch Konto in der Sitzung.
     await t.tab({ tokenStorage: 'local' });
     expect(t.session.has(tokensKey)).toBe(false);
+    expect(t.session.has(accountKey)).toBe(false);
   });
 
   it('gibt den Abbruch der Anmeldung weiter und behält den Stand', async () => {

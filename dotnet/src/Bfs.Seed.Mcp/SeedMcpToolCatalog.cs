@@ -55,6 +55,15 @@ internal sealed class SeedMcpToolCatalog
                     ? McpServerTool.Create(method, target: null, options)
                     : McpServerTool.Create(method, request => ActivatorUtilities.CreateInstance(request.Services!, type), options));
 
+                // Wie SEEDAUTH002 im Build, aber auch für Werkzeuge aus Assemblies ohne den Analyzer:
+                // Ohne Angabe sähe jedes Konto, das sich am Endpunkt anmelden kann, das Werkzeug.
+                if (!tool.HasAuthorization)
+                {
+                    throw new InvalidOperationException(
+                        $"Das MCP-Werkzeug „{tool.Name}“ ({type.FullName}.{method.Name}) legt nicht fest, wer es verwenden darf. " +
+                        "Ergänze an Methode oder Klasse [RequireCapability(\"…\")], [RequireAnyRole] oder [AllowWithoutRole].");
+                }
+
                 if (result.Any(t => t.Name == tool.Name))
                 {
                     throw new InvalidOperationException($"Das MCP-Werkzeug „{tool.Name}“ ist doppelt definiert.");

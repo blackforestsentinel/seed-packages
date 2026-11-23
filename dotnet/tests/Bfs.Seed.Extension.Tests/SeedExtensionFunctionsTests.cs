@@ -59,6 +59,47 @@ public class SeedExtensionFunctionsTests
     }
 
     [Fact]
+    public async Task CallerClosesTheConnection_BothEndWith499_WithoutError()
+    {
+        // Wie im Storage-Client: Das ausgelöste Token der Invocation lässt den Download mit TaskCanceledException enden.
+        using var aborted = new CancellationTokenSource();
+        await aborted.CancelAsync();
+        var functions = Functions(new CancelledReleases());
+
+        var updates = Assert.IsType<StatusCodeResult>(await functions.UpdatesAsync(Request(), aborted.Token));
+        var package = Assert.IsType<StatusCodeResult>(await functions.PackageAsync(Request(), Release.File, aborted.Token));
+
+        Assert.Equal(499, updates.StatusCode);
+        Assert.Equal(499, package.StatusCode);
+    }
+
+    [Fact]
+    public async Task RequestAborted_CountsAsCallerLeft()
+    {
+        using var aborted = new CancellationTokenSource();
+        await aborted.CancelAsync();
+        var request = Request();
+        request.HttpContext.RequestAborted = aborted.Token;
+        var functions = Functions(new CancelledReleases());
+
+        var updates = Assert.IsType<StatusCodeResult>(await functions.UpdatesAsync(request, TestContext.Current.CancellationToken));
+        var package = Assert.IsType<StatusCodeResult>(await functions.PackageAsync(request, Release.File, TestContext.Current.CancellationToken));
+
+        Assert.Equal(499, updates.StatusCode);
+        Assert.Equal(499, package.StatusCode);
+    }
+
+    [Fact]
+    public async Task OtherCancellations_StillFail()
+    {
+        // Etwa ein Timeout des Storage-Clients, während der Aufrufer noch wartet: ein echter Fehler.
+        var functions = Functions(new CancelledReleases());
+
+        await Assert.ThrowsAsync<TaskCanceledException>(() => functions.UpdatesAsync(Request(), TestContext.Current.CancellationToken));
+        await Assert.ThrowsAsync<TaskCanceledException>(() => functions.PackageAsync(Request(), Release.File, TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
     public void Register_NeedsTheStorageFeature()
     {
         var error = Assert.Throws<InvalidOperationException>(() => SeedExtensionExtensions.Register(new ServiceCollection(), Configuration(storage: false)));
@@ -112,5 +153,15 @@ public class SeedExtensionFunctionsTests
 
         public Task<Stream?> OpenPackageAsync(string file, CancellationToken cancellationToken)
             => Task.FromResult<Stream?>(current is not null && file == current.File ? new MemoryStream(Encoding.ASCII.GetBytes("Cr24")) : null);
+    }
+
+    /// <summary>Jeder Abruf endet wie ein abgebrochener Blob-Download.</summary>
+    private sealed class CancelledReleases : ISeedExtensionReleases
+    {
+        public Task<SeedExtensionRelease?> GetCurrentAsync(CancellationToken cancellationToken)
+            => Task.FromException<SeedExtensionRelease?>(new TaskCanceledException());
+
+        public Task<Stream?> OpenPackageAsync(string file, CancellationToken cancellationToken)
+            => Task.FromException<Stream?>(new TaskCanceledException());
     }
 }

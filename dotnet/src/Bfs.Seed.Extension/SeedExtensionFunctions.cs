@@ -14,17 +14,38 @@ namespace Bfs.Seed.Extension;
 /// Die Functions kommen mit dem Paket in jede App, die es referenziert; ohne
 /// <c>AddSeedExtensionUpdates()</c> antworten beide mit 404.
 /// </summary>
+/// <remarks>
+/// Schließt der Aufrufer die Verbindung, bevor die Antwort feststeht, enden beide Functions ohne
+/// Fehler mit Status 499. Der Browser fragt später ohnehin wieder;
+/// als Fehler gezählt würde so ein Abbruch nur Meldungen auslösen, die niemanden betreffen.
+/// </remarks>
 [AllowAnonymous]
 public sealed class SeedExtensionFunctions(IServiceProvider services)
 {
+    /// <summary>
+    /// 499 „Client Closed Request“ (nicht standardisiert, aus nginx): Der Aufrufer hat die Verbindung
+    /// geschlossen, die Antwort liest niemand mehr. So bleiben solche Aufrufe in der Telemetrie
+    /// erkennbar, ohne als Fehler der App zu gelten.
+    /// </summary>
+    internal const int StatusClientClosedRequest = 499;
+
     /// <summary><c>GET /api/extension/updates.xml</c>: Update-Manifest; 404, solange nichts veröffentlicht ist.</summary>
     [Function("SeedExtensionUpdates")]
     public async Task<IActionResult> UpdatesAsync(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = SeedExtension.UpdatesRoute)] HttpRequest request,
         CancellationToken cancellationToken)
     {
-        var releases = services.GetService<ISeedExtensionReleases>();
-        var release = releases is null ? null : await releases.GetCurrentAsync(cancellationToken);
+        SeedExtensionRelease? release;
+        try
+        {
+            var releases = services.GetService<ISeedExtensionReleases>();
+            release = releases is null ? null : await releases.GetCurrentAsync(cancellationToken);
+        }
+        catch (OperationCanceledException) when (CallerLeft(request, cancellationToken))
+        {
+            return ClientClosedRequest();
+        }
+
         if (release is null)
         {
             return new NotFoundResult();
@@ -46,14 +67,33 @@ public sealed class SeedExtensionFunctions(IServiceProvider services)
         string file,
         CancellationToken cancellationToken)
     {
-        var releases = services.GetService<ISeedExtensionReleases>();
-        var stream = releases is null ? null : await releases.OpenPackageAsync(file, cancellationToken);
+        Stream? stream;
+        try
+        {
+            var releases = services.GetService<ISeedExtensionReleases>();
+            stream = releases is null ? null : await releases.OpenPackageAsync(file, cancellationToken);
+        }
+        catch (OperationCanceledException) when (CallerLeft(request, cancellationToken))
+        {
+            return ClientClosedRequest();
+        }
+
         if (stream is null)
         {
             return new NotFoundResult();
         }
 
+        // Bricht der Download erst beim Schreiben ab, fängt das ASP.NET Core selbst ab (FileStreamResult).
         request.HttpContext.Response.Headers.CacheControl = "public, max-age=31536000, immutable";
         return new FileStreamResult(stream, SeedExtension.PackageContentType) { FileDownloadName = file };
     }
+
+    /// <summary>
+    /// Der Abbruch kam vom Aufrufer: Das Token der Invocation oder <see cref="HttpContext.RequestAborted"/>
+    /// ist ausgelöst. Andere Abbrüche, etwa ein Timeout des Storage-Clients, bleiben Fehler.
+    /// </summary>
+    private static bool CallerLeft(HttpRequest request, CancellationToken cancellationToken)
+        => cancellationToken.IsCancellationRequested || request.HttpContext.RequestAborted.IsCancellationRequested;
+
+    private static StatusCodeResult ClientClosedRequest() => new(StatusClientClosedRequest);
 }

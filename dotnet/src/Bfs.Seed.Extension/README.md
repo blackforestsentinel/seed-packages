@@ -16,6 +16,7 @@ builder.Build().Run();
 
 - **`GET /api/extension/updates.xml`**: Update-Manifest im gupdate-Format (Protokoll 2.0) mit ID, Version, Paket-Adresse und SHA-256 der aktuellen Veröffentlichung, `Cache-Control: no-cache`. 404, solange nichts veröffentlicht ist.
 - **`GET /api/extension/packages/{file}`**: das signierte CRX, `Cache-Control: immutable`. Nur Namen `<name>-<version>.crx`, wie die Pipeline sie vergibt; alles andere, auch `current.json` oder Pfade mit `../`, beantwortet der Endpunkt mit 404. Ältere Pakete bleiben abrufbar, damit ein laufender Download nicht ins Leere geht.
+- **Abbruch durch den Aufrufer ist kein Fehler:** Schließt der Browser die Verbindung, bevor die Antwort feststeht, enden beide Endpunkte mit Status 499 („Client Closed Request“) statt mit einer Exception; die Invocation gilt als erfolgreich, Exception-Telemetrie entsteht nicht. Der Browser fragt später ohnehin wieder. Andere Abbrüche, etwa ein Timeout beim Storage, bleiben Fehler.
 - **Ohne Anmeldung**, wie der Browser es verlangt (`[AllowAnonymous]` für `Bfs.Seed.Auth`). Das CRX ist signiert und sein Inhalt nicht geheim; die Erweiterung meldet sich erst danach selbst an.
 - **Functions im Paket:** Sie kommen in jede App, die das Paket referenziert; ohne `AddSeedExtensionUpdates()` antworten beide mit 404. In das openapi.json von `Bfs.Seed.OpenApi` gehen sie nicht ein.
 
